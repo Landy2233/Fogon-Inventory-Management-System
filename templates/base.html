@@ -1,7 +1,0 @@
-<!doctype html><html><head><meta charset="utf-8"><title>FogonIMS</title></head>
-<body>
-{% with messages = get_flashed_messages(with_categories=true) %}
-  {% if messages %}<ul>{% for c,m in messages %}<li>[{{c}}] {{m}}</li>{% endfor %}</ul>{% endif %}
-{% endwith %}
-<main>{% block content %}{% endblock %}</main>
-</body></html>
