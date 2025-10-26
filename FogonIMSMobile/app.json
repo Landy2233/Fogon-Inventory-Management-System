@@ -1,0 +1,11 @@
+{
+  "expo": {
+    "name": "FogonIMS",
+    "slug": "fogonimsmobile",
+    "scheme": "fogonims",
+    "jsEngine": "hermes",
+    "web": { "bundler": "metro" },
+    "plugins": ["expo-router", "expo-secure-store"],
+    "experiments": { "typedRoutes": true }
+  }
+}
