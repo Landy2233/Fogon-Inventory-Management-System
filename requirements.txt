@@ -2,6 +2,8 @@ Flask
 Flask-Login
 Flask-WTF
 Flask-SQLAlchemy
+Flask-Cors
+flask-jwt-extended
 email-validator
 Werkzeug
 python-dotenv

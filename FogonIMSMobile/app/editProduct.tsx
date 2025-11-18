@@ -3,15 +3,16 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   Alert,
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  SafeAreaView,
+  KeyboardAvoidingView,
+  Platform,
   TouchableOpacity,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
 import { api } from "../src/api/client";
 
 type Product = {
@@ -20,6 +21,15 @@ type Product = {
   quantity: number;
   price: number;
   description: string;
+};
+
+const COLORS = {
+  bg: "#f4f5f9",
+  card: "#ffffff",
+  primary: "#f97316",
+  text: "#111827",
+  muted: "#6b7280",
+  border: "#e5e7eb",
 };
 
 export default function EditProduct() {
@@ -95,86 +105,193 @@ export default function EditProduct() {
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" />
-        <Text style={{ marginTop: 6, opacity: 0.6 }}>Loading product…</Text>
-      </View>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loader}>
+          <ActivityIndicator size="large" />
+          <Text style={styles.loaderText}>Loading product…</Text>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.iconBtn} onPress={() => router.back()}>
-          <Ionicons name="chevron-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.h1}>Edit Product</Text>
-      </View>
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
+      >
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.card}>
+            <Text style={styles.title}>Edit Product</Text>
+            <Text style={styles.subtitle}>Update this item’s information</Text>
 
-      {/* Fields */}
-      <View style={styles.section}>
-        <Text style={styles.label}>Product Name</Text>
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g., Avocado"
-        />
-      </View>
+            <Text style={styles.label}>Product Name</Text>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="e.g., Avocado"
+              placeholderTextColor={COLORS.muted}
+            />
 
-      <View style={styles.row}>
-        <View style={[styles.section, { flex: 1, marginRight: 8 }]}>
-          <Text style={styles.label}>Quantity</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="numeric"
-            value={quantity}
-            onChangeText={setQuantity}
-          />
-        </View>
-        <View style={[styles.section, { flex: 1, marginLeft: 8 }]}>
-          <Text style={styles.label}>Price</Text>
-          <TextInput
-            style={styles.input}
-            keyboardType="decimal-pad"
-            value={price}
-            onChangeText={setPrice}
-          />
-        </View>
-      </View>
+            <View style={styles.row}>
+              <View style={styles.rowItem}>
+                <Text style={styles.label}>Quantity</Text>
+                <TextInput
+                  style={styles.input}
+                  keyboardType="numeric"
+                  value={quantity}
+                  onChangeText={setQuantity}
+                  placeholder="0"
+                  placeholderTextColor={COLORS.muted}
+                />
+              </View>
+              <View style={styles.rowItem}>
+                <Text style={styles.label}>Price</Text>
+                <TextInput
+                  style={styles.input}
+                  keyboardType="decimal-pad"
+                  value={price}
+                  onChangeText={setPrice}
+                  placeholder="0.00"
+                  placeholderTextColor={COLORS.muted}
+                />
+              </View>
+            </View>
 
-      <View style={styles.section}>
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={[styles.input, { height: 100 }]}
-          multiline
-          value={description}
-          onChangeText={setDescription}
-          placeholder="Brief details about this item..."
-        />
-      </View>
+            <Text style={styles.label}>Description</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              multiline
+              value={description}
+              onChangeText={setDescription}
+              placeholder="Brief details about this item..."
+              placeholderTextColor={COLORS.muted}
+            />
 
-      <Button title={saving ? "Saving..." : "Save Changes"} onPress={save} disabled={saving} />
-      <View style={{ marginTop: 12 }}>
-        <Button title="Back" color="#555" onPress={() => router.back()} />
-      </View>
-    </ScrollView>
+            <TouchableOpacity
+              style={[styles.primaryButton, saving && styles.buttonDisabled]}
+              onPress={save}
+              disabled={saving}
+            >
+              <Text style={styles.primaryButtonText}>
+                {saving ? "Saving..." : "Save Changes"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.textButton}
+              onPress={() => router.back()}
+            >
+              <Text style={styles.textButtonText}>Back</Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 16, backgroundColor: "#fff" },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
-  iconBtn: {
-    width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center",
+  safeArea: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
   },
-  h1: { fontSize: 24, fontWeight: "700", marginLeft: 8 },
-  section: { marginBottom: 16 },
-  row: { flexDirection: "row" },
-  label: { fontSize: 15, fontWeight: "600", marginBottom: 6 },
+  flex: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    flexGrow: 1,
+    justifyContent: "center", // center card vertically like AddProduct
+  },
+  card: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 18,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: COLORS.text,
+    textAlign: "center",
+  },
+  subtitle: {
+    fontSize: 13,
+    color: COLORS.muted,
+    textAlign: "center",
+    marginTop: 4,
+    marginBottom: 12,
+  },
+  label: {
+    fontSize: 14,
+    fontWeight: "600",
+    marginTop: 10,
+    marginBottom: 4,
+    color: COLORS.text,
+  },
   input: {
-    borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12, fontSize: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    backgroundColor: "#fff",
   },
-  loader: { flex: 1, alignItems: "center", justifyContent: "center" },
+  textArea: {
+    height: 100,
+    textAlignVertical: "top",
+  },
+  row: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  rowItem: {
+    flex: 1,
+  },
+  primaryButton: {
+    marginTop: 12,
+    backgroundColor: COLORS.primary,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  primaryButtonText: {
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 16,
+  },
+  textButton: {
+    marginTop: 10,
+    alignItems: "center",
+  },
+  textButtonText: {
+    color: COLORS.muted,
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
+  loader: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loaderText: {
+    marginTop: 6,
+    color: COLORS.muted,
+  },
 });

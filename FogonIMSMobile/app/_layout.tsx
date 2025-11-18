@@ -8,7 +8,7 @@ import { useFonts } from "expo-font";
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  // ✅ This path is correct for @expo/vector-icons Ionicons
+  // ✅ Load Ionicons font for @expo/vector-icons
   const [fontsLoaded] = useFonts({
     Ionicons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"),
   });
@@ -19,7 +19,26 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  if (!fontsLoaded) return null; // 👈 splash stays up instead of white screen
+  if (!fontsLoaded) return null; // keep splash instead of flashing white screen
 
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    <Stack
+      screenOptions={{
+        headerShown: false, // we use custom headers inside each screen
+        animation: "slide_from_right",
+      }}
+    >
+      {/* Auth */}
+      <Stack.Screen name="login" />
+
+      {/* Main app screens */}
+      <Stack.Screen name="inventory" />
+      <Stack.Screen name="addProduct" />
+      <Stack.Screen name="editProduct" />
+      <Stack.Screen name="request" />
+      <Stack.Screen name="requests" />
+      <Stack.Screen name="notifications" />
+    </Stack>
+  );
 }
+
