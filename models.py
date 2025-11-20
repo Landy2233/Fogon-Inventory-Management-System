@@ -10,6 +10,7 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
+    name = db.Column(db.String(120), nullable=False)  # <-- ADD THIS
     email = db.Column(db.String(120), unique=True)
     role = db.Column(db.String(20), default="cook")  # "cook" or "manager"
     password_hash = db.Column(db.String(255), nullable=False)

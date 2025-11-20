@@ -17,8 +17,8 @@ import { router } from "expo-router";
 import { api, saveToken } from "../src/api/client";
 
 export default function Login() {
-  const [username, setUsername] = useState("manager");
-  const [password, setPassword] = useState("Manager123!");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
   const submit = async () => {
@@ -102,20 +102,44 @@ export default function Login() {
               {loading ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <View
+                  style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
+                >
                   <Ionicons name="log-in-outline" size={18} color="#fff" />
                   <Text style={styles.buttonText}>Login</Text>
                 </View>
               )}
             </TouchableOpacity>
 
-            {/* Forgot Password (centered, after button) */}
+            {/* Forgot Password */}
             <View style={styles.forgotWrap}>
-              <TouchableOpacity onPress={handleForgotPassword} activeOpacity={0.7}>
+              <TouchableOpacity
+                onPress={handleForgotPassword}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.forgotText}>Forgot Password?</Text>
               </TouchableOpacity>
             </View>
 
+            {/* ---- NEW: Create account link ---- */}
+            <View style={styles.signupWrap}>
+              <Text style={styles.signupText}>
+                Don&apos;t have an account?{" "}
+              </Text>
+              <TouchableOpacity
+                onPress={() => router.push("/register")}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.signupLink}>Create account</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Optional demo hint */}
+            <Text style={styles.demoHint}>
+              Demo users:
+              {"\n"}manager / Manager123!
+              {"\n"}cook / Cook123!
+            </Text>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -197,18 +221,6 @@ const styles = StyleSheet.create({
     color: INK,
   },
 
-  // Forgot Password (centered)
-  forgotWrap: {
-    alignItems: "center",
-    marginTop: 16,
-    marginBottom: 6,
-  },
-  forgotText: {
-    color: "#2563EB",
-    fontWeight: "600",
-    textAlign: "center",
-  },
-
   // Login Button
   button: {
     marginTop: 14,
@@ -220,6 +232,31 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 
+  // Forgot Password (centered)
+  forgotWrap: {
+    alignItems: "center",
+    marginTop: 16,
+  },
+  forgotText: {
+    color: "#2563EB",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  // NEW: signup row
+  signupWrap: {
+    flexDirection: "row",
+    justifyContent: "center",
+    marginTop: 10,
+  },
+  signupText: {
+    color: "#4B5563",
+  },
+  signupLink: {
+    color: "#2563EB",
+    fontWeight: "700",
+  },
+
   // Demo hint
   demoHint: {
     marginTop: 12,
@@ -228,4 +265,3 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
 });
-

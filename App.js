@@ -7,6 +7,7 @@ import * as SecureStore from "expo-secure-store";
 
 import { loadToken, saveToken, clearToken } from "./src/api/client";
 import LoginScreen from "./src/screens/LoginScreen";
+import RegisterScreen from "./src/screens/RegisterScreen";
 import InventoryScreen from "./src/screens/InventoryScreen";
 import AddProductScreen from "./src/screens/AddProductScreen";
 import RequestScreen from "./src/screens/RequestScreen";
@@ -30,14 +31,14 @@ export default function App() {
   }, []);
 
   const onLogin = async (accessToken, userRole) => {
-    await saveToken(accessToken);            // persists + attaches to axios
+    await saveToken(accessToken); // persists + attaches to axios
     await SecureStore.setItemAsync("role", userRole);
     setToken(accessToken);
     setRole(userRole);
   };
 
   const onLogout = async () => {
-    await clearToken();                      // clears from axios + storage
+    await clearToken(); // clears from axios + storage
     await SecureStore.deleteItemAsync("role");
     setToken(null);
     setRole(null);
@@ -55,20 +56,22 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator>
         {!token ? (
-          // --------- Auth flow ---------
-          <Stack.Screen name="Login" options={{ headerShown: false }}>
-            {(props) => <LoginScreen {...props} onLogin={onLogin} />}
-          </Stack.Screen>
+          // --------- Auth flow (Login + Register) ---------
+          <>
+            <Stack.Screen name="Login" options={{ headerShown: false }}>
+              {(props) => <LoginScreen {...props} onLogin={onLogin} />}
+            </Stack.Screen>
+
+            <Stack.Screen name="Register" options={{ title: "Create Account" }}>
+              {(props) => <RegisterScreen {...props} onLogin={onLogin} />}
+            </Stack.Screen>
+          </>
         ) : (
           // --------- App flow ---------
           <>
             <Stack.Screen name="Inventory" options={{ title: "Inventory" }}>
               {(props) => (
-                <InventoryScreen
-                  {...props}
-                  role={role}
-                  onLogout={onLogout}
-                />
+                <InventoryScreen {...props} role={role} onLogout={onLogout} />
               )}
             </Stack.Screen>
 

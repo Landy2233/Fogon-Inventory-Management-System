@@ -11,7 +11,7 @@ from flask import (
     send_from_directory,
 )
 from flask_cors import CORS
-from flask_login import LoginManager, current_user
+from flask_login import LoginManager
 from flask_jwt_extended import (
     JWTManager,
     create_access_token,
@@ -55,15 +55,11 @@ def unique_filename(filename: str) -> str:
     return f"{base}-{ts}{ext}"
 
 
-# ---------- Low-stock scan (may create many, UI will dedupe) ----------
+# ---------- Low-stock scan ----------
 def run_low_stock_scan():
     """
     Scan for low-stock products and create LOW_STOCK notifications
-    for all managers.
-
-    We keep this dumb + reliable (no dedupe here) and handle
-    deduplication in the /api/notifications response so the UI only
-    shows one card per product.
+    for all managers. UI will dedupe.
     """
     managers = User.query.filter_by(role="manager").all()
     if not managers:
@@ -75,7 +71,6 @@ def run_low_stock_scan():
 
     for p in low_products:
         msg = f"Low stock: {p.name} has only {p.quantity} left."
-
         for m in managers:
             n = Notification(
                 user_id=m.id,
@@ -129,29 +124,103 @@ def create_app():
         if user and user.check_password(password):
             token = create_access_token(
                 identity=user.username,
-                additional_claims={"id": user.id, "role": user.role},
-            )
-            return jsonify(
-                {
-                    "access_token": token,
+                additional_claims={
+                    "id": user.id,
                     "role": user.role,
-                    "username": user.username,
-                }
-            ), 200
+                    "name": user.name,
+                },
+            )
+            return (
+                jsonify(
+                    {
+                        "access_token": token,
+                        "role": user.role,
+                        "username": user.username,
+                        "name": user.name,
+                    }
+                ),
+                200,
+            )
         return jsonify({"error": "Invalid credentials"}), 401
+
+    @app.post("/api/register")
+    def api_register():
+        """
+        Create a new user (cook or manager) and return a JWT so the app can
+        log them in immediately.
+        """
+        data = request.get_json() or {}
+
+        username = (data.get("username") or "").strip()
+        name = (data.get("name") or "").strip()
+        email = (data.get("email") or "").strip()
+        password = data.get("password") or ""
+        role = (data.get("role") or "cook").strip().lower()
+
+        if not username or not name or not password:
+            return jsonify(
+                {"error": "username, name, and password are required"}
+            ), 400
+
+        if role not in ("cook", "manager"):
+            return jsonify({"error": "role must be 'cook' or 'manager'"}), 400
+
+        if User.query.filter_by(username=username).first():
+            return jsonify({"error": "Username already exists"}), 400
+
+        if email and User.query.filter_by(email=email).first():
+            return jsonify({"error": "Email already exists"}), 400
+
+        u = User(
+            username=username,
+            name=name,
+            email=email or None,
+            role=role,
+        )
+        u.set_password(password)
+
+        db.session.add(u)
+        db.session.commit()
+
+        token = create_access_token(
+            identity=u.username,
+            additional_claims={
+                "id": u.id,
+                "role": u.role,
+                "name": u.name,
+            },
+        )
+
+        return (
+            jsonify(
+                {
+                    "ok": True,
+                    "id": u.id,
+                    "username": u.username,
+                    "name": u.name,
+                    "role": u.role,
+                    "access_token": token,
+                }
+            ),
+            201,
+        )
 
     @app.get("/api/me")
     @jwt_required()
     def api_me():
         username = get_jwt_identity()
         claims = get_jwt()
-        return jsonify(
-            {
-                "id": claims.get("id"),
-                "username": username,
-                "role": claims.get("role"),
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "id": claims.get("id"),
+                    "username": username,
+                    "role": claims.get("role"),
+                    "name": claims.get("name"),
+                }
+            ),
+            200,
+        )
 
     # ---------- Products ----------
     @app.get("/api/products")
@@ -186,18 +255,21 @@ def create_app():
         threshold = getattr(p, "reorder_threshold", 0) or 0
         is_low = (threshold > 0 and p.quantity <= threshold) or (p.quantity < 2)
 
-        return jsonify(
-            {
-                "id": p.id,
-                "name": p.name,
-                "quantity": p.quantity,
-                "price": float(p.price or 0),
-                "description": p.description or "",
-                "image_url": getattr(p, "image_url", None),
-                "reorder_threshold": threshold,
-                "is_low_stock": is_low,
-            }
-        ), 200
+        return (
+            jsonify(
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "quantity": p.quantity,
+                    "price": float(p.price or 0),
+                    "description": p.description or "",
+                    "image_url": getattr(p, "image_url", None),
+                    "reorder_threshold": threshold,
+                    "is_low_stock": is_low,
+                }
+            ),
+            200,
+        )
 
     @app.post("/api/products")
     @jwt_required()
@@ -265,7 +337,33 @@ def create_app():
         is_multipart = (
             request.content_type and "multipart/form-data" in request.content_type
         )
-        payload = request.form if is_multipart else (request.get_json() or {})
+
+        if is_multipart:
+            payload = request.form
+            image_file = request.files.get("image")
+        else:
+            payload = request.get_json() or {}
+            image_file = None
+
+        new_image_url = getattr(p, "image_url", None)
+
+        if image_file and image_file.filename:
+            if not allowed_image(image_file.filename):
+                return jsonify({"error": "Unsupported image type"}), 400
+
+            fname = unique_filename(image_file.filename)
+            save_path = os.path.join(app.config["UPLOAD_FOLDER"], fname)
+            image_file.save(save_path)
+            new_image_url = f"/static/uploads/{fname}"
+
+            old_url = getattr(p, "image_url", None)
+            if old_url:
+                try:
+                    old_path = os.path.join(app.root_path, old_url.strip("/"))
+                    if os.path.isfile(old_path):
+                        os.remove(old_path)
+                except Exception:
+                    pass
 
         try:
             p.name = (payload.get("name", p.name) or "").strip()
@@ -275,15 +373,19 @@ def create_app():
             p.quantity = int(payload.get("quantity", p.quantity))
             p.price = float(payload.get("price", p.price or 0))
             p.reorder_threshold = int(
-                payload.get("reorder_threshold", getattr(p, "reorder_threshold", 0) or 0)
+                payload.get(
+                    "reorder_threshold",
+                    getattr(p, "reorder_threshold", 0) or 0,
+                )
             )
+            p.image_url = new_image_url
         except Exception:
             return jsonify(
                 {"error": "quantity, price and threshold must be numeric"}
             ), 400
 
         db.session.commit()
-        return jsonify({"ok": True, "id": p.id}), 200
+        return jsonify({"ok": True, "id": p.id, "image_url": p.image_url}), 200
 
     @app.delete("/api/products/<int:pid>")
     @jwt_required()
@@ -349,13 +451,21 @@ def create_app():
 
         q = StockRequest.query.join(Product, StockRequest.product_id == Product.id)
 
+        # Cooks see only their own requests; managers see all
         if role != "manager":
             q = q.filter(StockRequest.requested_by == uid)
 
         rows = q.order_by(StockRequest.created_at.desc()).all()
 
-        return jsonify(
-            [
+        result = []
+        for r in rows:
+            requester = User.query.get(r.requested_by) if r.requested_by else None
+            if requester:
+                display_name = (requester.name or "").strip() or requester.username
+            else:
+                display_name = None
+
+            result.append(
                 {
                     "id": r.id,
                     "product_id": r.product_id,
@@ -363,10 +473,85 @@ def create_app():
                     "requested_qty": r.quantity,
                     "status": r.status,
                     "created_at": to_eastern_iso(r.created_at),
+                    "requested_by_name": display_name,
                 }
-                for r in rows
-            ]
-        ), 200
+            )
+
+        return jsonify(result), 200
+
+    @app.put("/api/requests/<int:rid>")
+    @jwt_required()
+    def api_request_update(rid: int):
+        """
+        Cook can edit their own PENDING request: change product and/or quantity.
+        """
+        claims = get_jwt()
+        uid = claims.get("id")
+        role = (claims.get("role") or "").lower()
+
+        r = StockRequest.query.get(rid)
+        if not r:
+            return jsonify({"error": "Request not found"}), 404
+
+        # Only the original requester, and only while Pending
+        if r.requested_by != uid or role == "manager":
+            return jsonify({"error": "You can only edit your own pending requests"}), 403
+        if r.status != "Pending":
+            return jsonify({"error": "Only pending requests can be edited"}), 400
+
+        data = request.get_json() or {}
+        try:
+            new_product_id = int(data.get("product_id", r.product_id))
+            new_qty = int(data.get("quantity", r.quantity))
+        except Exception:
+            return jsonify({"error": "product_id and quantity must be integers"}), 400
+
+        if new_qty <= 0:
+            return jsonify({"error": "Quantity must be > 0"}), 400
+
+        product = Product.query.get(new_product_id)
+        if not product:
+            return jsonify({"error": "Product not found"}), 404
+
+        r.product_id = new_product_id
+        r.quantity = new_qty
+        db.session.commit()
+
+        return (
+            jsonify(
+                {
+                    "ok": True,
+                    "id": r.id,
+                    "product_id": r.product_id,
+                    "requested_qty": r.quantity,
+                    "status": r.status,
+                }
+            ),
+            200,
+        )
+
+    @app.delete("/api/requests/<int:rid>")
+    @jwt_required()
+    def api_request_delete(rid: int):
+        """
+        Cook can delete their own PENDING request.
+        """
+        claims = get_jwt()
+        uid = claims.get("id")
+        role = (claims.get("role") or "").lower()
+
+        r = StockRequest.query.get(rid)
+        if not r:
+            return jsonify({"error": "Request not found"}), 404
+
+        if r.requested_by != uid or role == "manager":
+            return jsonify({"error": "You can only delete your own pending requests"}), 403
+        if r.status != "Pending":
+            return jsonify({"error": "Only pending requests can be deleted"}), 400
+
+        db.session.delete(r)
+        db.session.commit()
+        return jsonify({"ok": True, "id": rid}), 200
 
     @app.post("/api/requests/<int:rid>/approve")
     @jwt_required()
@@ -447,19 +632,15 @@ def create_app():
         uid = claims.get("id")
         role = (claims.get("role") or "").lower()
 
-        # Manager opening notifications → run low-stock scan
         if role == "manager":
             run_low_stock_scan()
 
-        # Fetch all notifications for this user (newest first)
         all_items = (
             Notification.query.filter_by(user_id=uid)
             .order_by(Notification.created_at.desc())
             .all()
         )
 
-        # Deduplicate LOW_STOCK by product (using payload.product_id if present,
-        # otherwise use the message prefix)
         seen_low_stock = set()
         filtered_items = []
 
@@ -469,33 +650,34 @@ def create_app():
                 if isinstance(n.payload, dict):
                     product_id = n.payload.get("product_id")
 
-                # use product_id as key if present, else message prefix
                 if product_id is not None:
                     key = ("LOW_STOCK", product_id)
                 else:
                     key = ("LOW_STOCK", (n.message or "").split(" has only")[0])
 
                 if key in seen_low_stock:
-                    # Skip duplicate low-stock notifications for the same product
                     continue
 
                 seen_low_stock.add(key)
 
             filtered_items.append(n)
 
-        return jsonify(
-            [
-                {
-                    "id": n.id,
-                    "type": n.type,
-                    "message": n.message,
-                    "payload": n.payload,
-                    "is_read": n.is_read,
-                    "created_at": to_eastern_iso(n.created_at),
-                }
-                for n in filtered_items
-            ]
-        ), 200
+        return (
+            jsonify(
+                [
+                    {
+                        "id": n.id,
+                        "type": n.type,
+                        "message": n.message,
+                        "payload": n.payload,
+                        "is_read": n.is_read,
+                        "created_at": to_eastern_iso(n.created_at),
+                    }
+                    for n in filtered_items
+                ]
+            ),
+            200,
+        )
 
     @app.post("/api/notifications/<int:nid>/read")
     @jwt_required()
@@ -534,13 +716,23 @@ def create_app():
             db.create_all()
             created = False
             if not User.query.filter_by(username="manager").first():
-                m = User(username="manager", role="manager", email="manager@example.com")
+                m = User(
+                    username="manager",
+                    name="Default Manager",
+                    role="manager",
+                    email="manager@example.com",
+                )
                 m.set_password("Manager123!")
                 db.session.add(m)
                 created = True
 
             if not User.query.filter_by(username="cook").first():
-                c = User(username="cook", role="cook", email="cook@example.com")
+                c = User(
+                    username="cook",
+                    name="Default Cook",
+                    role="cook",
+                    email="cook@example.com",
+                )
                 c.set_password("Cook123!")
                 db.session.add(c)
                 created = True
@@ -557,3 +749,4 @@ app = create_app()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
+    

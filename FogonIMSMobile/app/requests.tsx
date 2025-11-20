@@ -23,6 +23,8 @@ type StockRequest = {
   requested_qty: number;
   status: "Pending" | "Approved" | "Denied";
   created_at: string | null;
+  // NEW: who requested it (from backend requested_by_name)
+  requested_by_name?: string | null;
 };
 
 type Me = { id: number; username: string; role?: string };
@@ -86,21 +88,52 @@ export default function RequestsScreen() {
   }
 
   async function deny(id: number) {
+    Alert.alert("Deny Request", "Are you sure you want to deny this request?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Deny",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await api.post(`/requests/${id}/deny`, { reason: "" });
+            await loadRequests();
+          } catch (err: any) {
+            console.log("❌ deny error", err?.response?.data || err);
+            Alert.alert("Error", "Failed to deny request.");
+          }
+        },
+      },
+    ]);
+  }
+
+  // --- cook edit/delete helpers ---
+  function handleEdit(item: StockRequest) {
+    router.push({
+      pathname: "/request",
+      params: {
+        requestId: String(item.id),
+        productId: String(item.product_id),
+        qty: String(item.requested_qty),
+      },
+    });
+  }
+
+  function deleteRequest(id: number) {
     Alert.alert(
-      "Deny Request",
-      "Are you sure you want to deny this request?",
+      "Delete Request",
+      "Are you sure you want to delete this request?",
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Deny",
+          text: "Delete",
           style: "destructive",
           onPress: async () => {
             try {
-              await api.post(`/requests/${id}/deny`, { reason: "" });
+              await api.delete(`/requests/${id}`);
               await loadRequests();
             } catch (err: any) {
-              console.log("❌ deny error", err?.response?.data || err);
-              Alert.alert("Error", "Failed to deny request.");
+              console.log("❌ delete error", err?.response?.data || err);
+              Alert.alert("Error", "Failed to delete request.");
             }
           },
         },
@@ -115,6 +148,16 @@ export default function RequestsScreen() {
       </Text>
 
       <Text style={styles.detail}>Requested: {item.requested_qty}</Text>
+
+      {/* NEW: show who requested it, only for manager view */}
+      {isManager && (
+        <Text style={styles.detail}>
+          Requested by:{" "}
+          {item.requested_by_name && item.requested_by_name.trim().length > 0
+            ? item.requested_by_name
+            : "Unknown"}
+        </Text>
+      )}
 
       {item.created_at && (
         <Text style={styles.meta}>
@@ -135,6 +178,7 @@ export default function RequestsScreen() {
         {item.status}
       </Text>
 
+      {/* Manager actions: approve / deny */}
       {isManager && item.status === "Pending" && (
         <View style={styles.actionsRow}>
           <TouchableOpacity
@@ -149,6 +193,35 @@ export default function RequestsScreen() {
             onPress={() => deny(item.id)}
           >
             <Text style={styles.actionText}>Deny</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Cook actions: edit / delete for pending */}
+      {!isManager && item.status === "Pending" && (
+        <View style={styles.actionsRow}>
+          <TouchableOpacity
+            style={[
+              styles.actionBtn,
+              { backgroundColor: "#E5E7EB" }, // light gray
+            ]}
+            onPress={() => handleEdit(item)}
+          >
+            <Text
+              style={[
+                styles.actionText,
+                { color: "#111827" }, // dark text on gray
+              ]}
+            >
+              Edit
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.actionBtn, { backgroundColor: "#DC2626" }]} // red
+            onPress={() => deleteRequest(item.id)}
+          >
+            <Text style={styles.actionText}>Delete</Text>
           </TouchableOpacity>
         </View>
       )}

@@ -4,8 +4,21 @@
     "slug": "fogonimsmobile",
     "scheme": "fogonims",
     "jsEngine": "hermes",
-    "web": { "bundler": "metro" },
-    "plugins": ["expo-router", "expo-secure-store"],
-    "experiments": { "typedRoutes": true }
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "android": {
+      "package": "com.anonymous.fogonimsmobile"
+    },
+    "ios": {
+      "bundleIdentifier": "com.anonymous.fogonimsmobile"
+    }
   }
 }
