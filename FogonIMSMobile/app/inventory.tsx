@@ -166,35 +166,35 @@ export default function Inventory() {
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
+          <View style={{ flex: 1 }}>
             <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={styles.name}>{item.name}</Text>
-              {lowStock && <Text style={styles.lowStockPill}>Low stock</Text>}
+              <Text style={styles.name} numberOfLines={1}>
+                {item.name}
+              </Text>
+              {lowStock && <Text style={styles.lowStockPill}>Low</Text>}
             </View>
 
-            <Text
-              style={[
-                styles.meta,
-                lowStock && styles.metaLow,
-              ]}
-            >
+            <Text style={[styles.meta, lowStock && styles.metaLow]}>
               Qty: {item.quantity} · {formatCurrency(item.price)}
             </Text>
 
-            {/* Description */}
             {item.description ? (
-              <Text style={styles.desc}>{item.description}</Text>
+              <Text style={styles.desc} numberOfLines={2}>
+                {item.description}
+              </Text>
             ) : null}
 
-            {/* Vendor under description, smaller + lighter */}
             {hasVendor && (
-              <Text style={styles.vendor}>Vendor: {vendorLabel}</Text>
+              <Text style={styles.vendor} numberOfLines={1}>
+                Vendor: {vendorLabel}
+              </Text>
             )}
 
             {!!item.image_url && (
               <Image
                 source={{ uri: absoluteUrl(item.image_url) }}
                 style={styles.thumb}
+                resizeMode="contain"
               />
             )}
           </View>
@@ -210,14 +210,14 @@ export default function Inventory() {
                 }
                 style={[styles.iconBtn, { backgroundColor: "#111827" }]}
               >
-                <Ionicons name="create-outline" size={18} color="#fff" />
+                <Ionicons name="create-outline" size={16} color="#fff" />
               </TouchableOpacity>
 
               <TouchableOpacity
                 onPress={() => confirmDelete(item)}
                 style={[styles.iconBtn, { backgroundColor: COLORS.primary }]}
               >
-                <Ionicons name="trash-outline" size={18} color="#fff" />
+                <Ionicons name="trash-outline" size={16} color="#fff" />
               </TouchableOpacity>
             </View>
           )}
@@ -235,7 +235,6 @@ export default function Inventory() {
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerLeftRow}>
-          {/* back to HomeScreen */}
           <TouchableOpacity
             onPress={() => router.replace("/HomeScreen")}
             style={styles.backBtn}
@@ -333,7 +332,9 @@ export default function Inventory() {
           data={displayedItems}
           keyExtractor={(x) => String(x.id)}
           renderItem={renderItem}
-          contentContainerStyle={{ paddingBottom: 100 }}
+          numColumns={2}
+          columnWrapperStyle={styles.gridRow}
+          contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="cube-outline" size={48} color="#aaa" />
@@ -477,12 +478,23 @@ const styles = StyleSheet.create({
   empty: { marginTop: 60, alignItems: "center" },
   emptyText: { marginTop: 8, color: COLORS.muted },
 
+  listContent: {
+    paddingHorizontal: 10,
+    paddingBottom: 100,
+  },
+
+  gridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
   card: {
+    flex: 1,
     backgroundColor: COLORS.card,
     borderRadius: 14,
-    padding: 14,
-    marginHorizontal: 16,
+    padding: 10,
     marginTop: 10,
+    marginHorizontal: 4,
     borderWidth: 1,
     borderColor: COLORS.border,
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
@@ -493,46 +505,50 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   cardActions: {
+    marginLeft: 6,
     flexDirection: "column",
-    gap: 8,
+    gap: 6,
   },
-  name: { fontSize: 18, fontWeight: "600", color: COLORS.text },
+  name: { fontSize: 16, fontWeight: "600", color: COLORS.text },
 
-  meta: { marginTop: 4, color: "#4B5563", fontSize: 14 },
+  meta: { marginTop: 3, color: "#4B5563", fontSize: 13 },
   metaLow: { color: "#B91C1C", fontWeight: "700" },
 
-  desc: { marginTop: 4, color: COLORS.muted, fontSize: 13 },
+  desc: { marginTop: 3, color: COLORS.muted, fontSize: 12 },
 
   vendor: {
     marginTop: 2,
     color: "#9CA3AF",
-    fontSize: 11,
+    fontSize: 10,
   },
 
   lowStockPill: {
-    marginLeft: 8,
+    marginLeft: 6,
     backgroundColor: "#FCA5A5",
     color: "#7F1D1D",
-    fontSize: 11,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    fontSize: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
     borderRadius: 999,
     fontWeight: "700",
   },
 
   iconBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
     borderRadius: 10,
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
 
   thumb: {
     width: "100%",
-    height: 120,
+    aspectRatio: 4 / 3,
     borderRadius: 10,
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 1,
-    borderColor: "#eee",
+    borderColor: "#E5E7EB",
+    backgroundColor: "#F3F4F6",
+    alignSelf: "center",
   },
 });
+
