@@ -14,13 +14,13 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
+import { useLocalSearchParams, router } from "expo-router";
 import {
   api,
   loadToken,
   clearToken,
   fetchCurrentUser,
 } from "../src/api/client";
-import { router } from "expo-router";
 
 type Product = {
   id: number;
@@ -31,6 +31,8 @@ type Product = {
   image_url?: string | null;
   reorder_threshold?: number;
   is_low_stock?: boolean;
+  vendor_name?: string | null;
+  vendor_contact?: string | null;
 };
 
 type Me = { id: number; username: string; role?: string };
@@ -56,11 +58,23 @@ const iosShadow = {
   shadowOffset: { width: 0, height: 6 },
 };
 
+function isLowStockProduct(item: Product): boolean {
+  const threshold = item.reorder_threshold ?? 0;
+  return (
+    !!item.is_low_stock ||
+    (threshold > 0 && item.quantity <= threshold) ||
+    item.quantity < 2
+  );
+}
+
 export default function Inventory() {
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [me, setMe] = useState<Me | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const params = useLocalSearchParams<{ filter?: string }>();
+  const showLowOnly = (params.filter || "").toLowerCase() === "low";
 
   const isManager = (me?.role || "").toLowerCase() === "manager";
 
@@ -137,11 +151,17 @@ export default function Inventory() {
   };
 
   const renderItem = ({ item }: { item: Product }) => {
-    const lowStock =
-      !!item.is_low_stock ||
-      ((item.reorder_threshold ?? 0) > 0 &&
-        item.quantity <= (item.reorder_threshold ?? 0)) ||
-      item.quantity < 2; // hard rule
+    const lowStock = isLowStockProduct(item);
+
+    const vendorName = item.vendor_name?.trim() || "";
+    const vendorContact = item.vendor_contact?.trim() || "";
+    const hasVendor = vendorName.length > 0 || vendorContact.length > 0;
+
+    const vendorLabel = hasVendor
+      ? vendorContact
+        ? `${vendorName || "Unspecified"} (${vendorContact})`
+        : vendorName
+      : "";
 
     return (
       <View style={styles.card}>
@@ -152,13 +172,24 @@ export default function Inventory() {
               {lowStock && <Text style={styles.lowStockPill}>Low stock</Text>}
             </View>
 
-            <Text style={[styles.meta, lowStock && styles.metaLow]}>
-              Qty: {item.quantity} · ${item.price.toFixed(2)}
+            <Text
+              style={[
+                styles.meta,
+                lowStock && styles.metaLow,
+              ]}
+            >
+              Qty: {item.quantity} · {formatCurrency(item.price)}
             </Text>
 
+            {/* Description */}
             {item.description ? (
               <Text style={styles.desc}>{item.description}</Text>
             ) : null}
+
+            {/* Vendor under description, smaller + lighter */}
+            {hasVendor && (
+              <Text style={styles.vendor}>Vendor: {vendorLabel}</Text>
+            )}
 
             {!!item.image_url && (
               <Image
@@ -173,9 +204,9 @@ export default function Inventory() {
               <TouchableOpacity
                 onPress={() =>
                   router.push({
-                    pathname: "editProduct",
+                    pathname: "/editProduct",
                     params: { id: String(item.id) },
-                  } as any)
+                  })
                 }
                 style={[styles.iconBtn, { backgroundColor: "#111827" }]}
               >
@@ -195,17 +226,34 @@ export default function Inventory() {
     );
   };
 
+  const displayedItems = showLowOnly
+    ? items.filter((p) => isLowStockProduct(p))
+    : items;
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* HEADER */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.title}>Inventory</Text>
-          {me?.username && (
-            <Text style={styles.subtitle}>
-              {me.username} · {isManager ? "Manager" : "Cook"}
+        <View style={styles.headerLeftRow}>
+          {/* back to HomeScreen */}
+          <TouchableOpacity
+            onPress={() => router.replace("/HomeScreen")}
+            style={styles.backBtn}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-back" size={22} color={COLORS.text} />
+          </TouchableOpacity>
+
+          <View>
+            <Text style={styles.title}>
+              {showLowOnly ? "Low Stock" : "Inventory"}
             </Text>
-          )}
+            {me?.username && (
+              <Text style={styles.subtitle}>
+                {me.username} · {isManager ? "Manager" : "Cook"}
+              </Text>
+            )}
+          </View>
         </View>
 
         <View style={styles.headerButtons}>
@@ -275,21 +323,25 @@ export default function Inventory() {
       </View>
 
       {/* LIST */}
-      {loading && items.length === 0 ? (
+      {loading && displayedItems.length === 0 ? (
         <View style={styles.loader}>
           <ActivityIndicator size="large" />
           <Text style={{ marginTop: 6, opacity: 0.6 }}>Loading...</Text>
         </View>
       ) : (
         <FlatList
-          data={items}
+          data={displayedItems}
           keyExtractor={(x) => String(x.id)}
           renderItem={renderItem}
           contentContainerStyle={{ paddingBottom: 100 }}
           ListEmptyComponent={
             <View style={styles.empty}>
               <Ionicons name="cube-outline" size={48} color="#aaa" />
-              <Text style={styles.emptyText}>No products yet</Text>
+              <Text style={styles.emptyText}>
+                {showLowOnly
+                  ? "No items are currently low stock."
+                  : "No products yet"}
+              </Text>
             </View>
           }
         />
@@ -305,6 +357,11 @@ function absoluteUrl(path?: string | null) {
   return `${BASE}${path}`;
 }
 
+function formatCurrency(v?: number) {
+  const n = typeof v === "number" ? v : 0;
+  return `$${n.toFixed(2)}`;
+}
+
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: COLORS.bg },
 
@@ -315,6 +372,14 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
+  },
+  headerLeftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  backBtn: {
+    paddingRight: 8,
+    paddingVertical: 4,
   },
   title: { fontSize: 24, fontWeight: "700", color: COLORS.text },
   subtitle: { color: COLORS.muted, marginTop: 2 },
@@ -428,20 +493,26 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
   },
   cardActions: {
-    flexDirection: "row",
+    flexDirection: "column",
     gap: 8,
   },
   name: { fontSize: 18, fontWeight: "600", color: COLORS.text },
 
   meta: { marginTop: 4, color: "#4B5563", fontSize: 14 },
-  metaLow: { color: "#B91C1C", fontWeight: "700" }, // 🔴 Qty line
+  metaLow: { color: "#B91C1C", fontWeight: "700" },
 
   desc: { marginTop: 4, color: COLORS.muted, fontSize: 13 },
 
+  vendor: {
+    marginTop: 2,
+    color: "#9CA3AF",
+    fontSize: 11,
+  },
+
   lowStockPill: {
     marginLeft: 8,
-    backgroundColor: "#FCA5A5", // light red
-    color: "#7F1D1D",           // dark red
+    backgroundColor: "#FCA5A5",
+    color: "#7F1D1D",
     fontSize: 11,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -457,10 +528,10 @@ const styles = StyleSheet.create({
   },
 
   thumb: {
-    width: 64,
-    height: 64,
-    borderRadius: 8,
-    marginTop: 8,
+    width: "100%",
+    height: 120,
+    borderRadius: 10,
+    marginTop: 10,
     borderWidth: 1,
     borderColor: "#eee",
   },

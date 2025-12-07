@@ -26,6 +26,9 @@ type Product = {
   price: number;
   description: string;
   image_url?: string | null;
+  category?: string | null;
+  vendor_name?: string | null;
+  vendor_contact?: string | null;
 };
 
 const COLORS = {
@@ -36,6 +39,18 @@ const COLORS = {
   border: "#E5E7EB",
   muted: "#6B7280",
 };
+
+const CATEGORY_OPTIONS = [
+  { value: "Produce", label: "Produce" },
+  { value: "Dry Goods", label: "Dry Goods" },
+  { value: "Meat & Poultry", label: "Meat & Poultry" },
+  { value: "Dairy", label: "Dairy" },
+  { value: "Frozen", label: "Frozen" },
+  { value: "Beverages", label: "Beverages" },
+  { value: "Sauces & Condiments", label: "Sauces & Condiments" },
+  { value: "Packaged", label: "Packaged" },
+  { value: "Other", label: "Other" },
+];
 
 export default function EditProduct() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -51,6 +66,17 @@ export default function EditProduct() {
   const [serverImageUrl, setServerImageUrl] = useState<string | null>(null);
   const [localImageUri, setLocalImageUri] = useState<string | null>(null);
 
+  const [category, setCategory] = useState<string>("");
+  const [vendorName, setVendorName] = useState<string>("");
+  const [vendorContact, setVendorContact] = useState<string>("");
+
+  const [categoryOpen, setCategoryOpen] = useState(false);
+
+  const categoryLabel = (value: string) => {
+    const found = CATEGORY_OPTIONS.find((c) => c.value === value);
+    return found ? found.label : "Select category";
+  };
+
   // ------------ Load existing product ------------
   async function loadProduct() {
     try {
@@ -61,6 +87,9 @@ export default function EditProduct() {
       setPrice(String(data.price ?? 0));
       setDescription(data.description || "");
       setServerImageUrl(data.image_url || null);
+      setCategory((data.category as string) || "");
+      setVendorName((data.vendor_name as string) || "");
+      setVendorContact((data.vendor_contact as string) || "");
     } catch (err) {
       console.log("❌ load product error", err);
       Alert.alert("Error", "Unable to load product.");
@@ -114,6 +143,9 @@ export default function EditProduct() {
       form.append("quantity", String(q));
       form.append("price", String(p));
       form.append("description", description.trim());
+      form.append("category", category || "");
+      form.append("vendor_name", vendorName.trim());
+      form.append("vendor_contact", vendorContact.trim());
       // If you later expose reorder_threshold, append here as well.
 
       // Only include "image" if user picked a new one
@@ -186,6 +218,56 @@ export default function EditProduct() {
               placeholder="e.g., Avocado"
             />
 
+            {/* Category dropdown */}
+            <Text style={styles.label}>Category</Text>
+            <View style={styles.dropdownWrapper}>
+              <TouchableOpacity
+                style={styles.dropdown}
+                onPress={() => setCategoryOpen((o) => !o)}
+                activeOpacity={0.85}
+              >
+                <Text
+                  style={
+                    category ? styles.dropdownText : styles.dropdownPlaceholder
+                  }
+                >
+                  {categoryLabel(category)}
+                </Text>
+                <Ionicons
+                  name={categoryOpen ? "chevron-up" : "chevron-down"}
+                  size={18}
+                  color={COLORS.muted}
+                />
+              </TouchableOpacity>
+
+              {categoryOpen && (
+                <View style={styles.dropdownMenu}>
+                  {CATEGORY_OPTIONS.map((opt) => (
+                    <TouchableOpacity
+                      key={opt.value}
+                      style={styles.dropdownItem}
+                      onPress={() => {
+                        setCategory(opt.value);
+                        setCategoryOpen(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownItemText,
+                          opt.value === category && {
+                            color: COLORS.primary,
+                            fontWeight: "700",
+                          },
+                        ]}
+                      >
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
             {/* Quantity & Price */}
             <View style={styles.row}>
               <View style={{ flex: 1, marginRight: 8 }}>
@@ -216,6 +298,23 @@ export default function EditProduct() {
               value={description}
               onChangeText={setDescription}
               placeholder="Brief details about this item..."
+            />
+
+            {/* Vendor info */}
+            <Text style={styles.label}>Vendor Name</Text>
+            <TextInput
+              style={styles.input}
+              value={vendorName}
+              onChangeText={setVendorName}
+              placeholder="e.g., Local Supplier"
+            />
+
+            <Text style={styles.label}>Vendor Contact</Text>
+            <TextInput
+              style={styles.input}
+              value={vendorContact}
+              onChangeText={setVendorContact}
+              placeholder="Phone, email, etc."
             />
 
             {/* Image */}
@@ -362,5 +461,45 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  // Dropdown styles
+  dropdownWrapper: {
+    marginBottom: 4,
+  },
+  dropdown: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  dropdownText: {
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  dropdownPlaceholder: {
+    fontSize: 15,
+    color: COLORS.muted,
+  },
+  dropdownMenu: {
+    marginTop: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    backgroundColor: "#fff",
+    overflow: "hidden",
+  },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  dropdownItemText: {
+    fontSize: 14,
+    color: COLORS.text,
   },
 });

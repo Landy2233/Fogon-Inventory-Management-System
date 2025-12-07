@@ -4,11 +4,10 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
 
-// Keep Splash visible while we load fonts
+// Keep splash visible until fonts load
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
 export default function RootLayout() {
-  // ✅ Load Ionicons font for @expo/vector-icons
   const [fontsLoaded] = useFonts({
     Ionicons: require("@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/Ionicons.ttf"),
   });
@@ -19,26 +18,28 @@ export default function RootLayout() {
     }
   }, [fontsLoaded]);
 
-  if (!fontsLoaded) return null; // keep splash instead of flashing white screen
+  if (!fontsLoaded) return null;
 
   return (
     <Stack
       screenOptions={{
-        headerShown: false, // we use custom headers inside each screen
+        headerShown: false,
         animation: "slide_from_right",
       }}
     >
       {/* Auth */}
       <Stack.Screen name="login" />
 
-      {/* Main app screens */}
+      {/* Main screens */}
+      <Stack.Screen name="HomeScreen" />
       <Stack.Screen name="inventory" />
       <Stack.Screen name="addProduct" />
       <Stack.Screen name="editProduct" />
       <Stack.Screen name="request" />
       <Stack.Screen name="requests" />
       <Stack.Screen name="notifications" />
+      <Stack.Screen name="bulkImport" />
+      <Stack.Screen name="reports" />
     </Stack>
   );
 }
-

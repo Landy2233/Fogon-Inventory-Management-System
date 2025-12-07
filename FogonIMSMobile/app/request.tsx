@@ -121,13 +121,13 @@ export default function RequestProduct() {
         // UPDATE existing request
         const url = `/requests/${params.requestId}`;
         const { data } = await api.put(url, body);
-        console.log("✅ updated request", data);
+        console.log("Updated request", data);
         Alert.alert("Request Updated", "Your request has been updated.");
         router.replace("/requests"); // back to My Stock Requests
       } else {
         // CREATE new request (old behavior)
         const { data } = await api.post("/requests", body);
-        console.log("✅ created request", data);
+        console.log("Created request", data);
         Alert.alert("Request Submitted", `Request #${data.id} created.`);
         router.replace("/inventory"); // keep existing flow
       }

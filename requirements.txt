@@ -5,7 +5,9 @@ Flask-SQLAlchemy
 Flask-Cors
 flask-jwt-extended
 email-validator
+itsdangerous
 Werkzeug
 python-dotenv
 SQLAlchemy
 PyMySQL
+gunicorn

@@ -1,6 +1,7 @@
 # models.py
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
 
 db = SQLAlchemy()
 
@@ -10,7 +11,7 @@ class User(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
-    name = db.Column(db.String(120), nullable=False)  # <-- ADD THIS
+    name = db.Column(db.String(120), nullable=False)  # Full name
     email = db.Column(db.String(120), unique=True)
     role = db.Column(db.String(20), default="cook")  # "cook" or "manager"
     password_hash = db.Column(db.String(255), nullable=False)
@@ -31,8 +32,12 @@ class Product(db.Model):
     price = db.Column(db.Numeric(10, 2), default=0)
     description = db.Column(db.Text)
     image_url = db.Column(db.String(255), nullable=True)
-    # Sprint 2: threshold for low stock alerts
-    reorder_threshold = db.Column(db.Integer, default=0)
+
+    # Sprint 2 / 3 fields
+    reorder_threshold = db.Column(db.Integer, default=0)  # low stock threshold
+    vendor_name = db.Column(db.String(120), nullable=True)
+    vendor_contact = db.Column(db.String(255), nullable=True)
+    category = db.Column(db.String(80), nullable=True)  # e.g. Produce, Grains, Protein
 
 
 class StockRequest(db.Model):
@@ -56,7 +61,7 @@ class Notification(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     # e.g. "LOW_STOCK", "REQUEST_APPROVED", "REQUEST_DENIED"
-    type = db.Column(db.String(32), nullable=False)
+    type = db.Column(db.String(50), nullable=False)
     message = db.Column(db.String(255), nullable=False)
     payload = db.Column(db.JSON, nullable=True)
     is_read = db.Column(db.Boolean, default=False)
@@ -65,5 +70,17 @@ class Notification(db.Model):
     user = db.relationship("User", backref="notifications")
 
 
+# 🔐 NEW: Password reset token table
+class PasswordResetToken(db.Model):
+    __tablename__ = "password_reset_tokens"
 
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    token = db.Column(db.String(255), unique=True, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+    used = db.Column(db.Boolean, default=False)
 
+    user = db.relationship("User", backref="reset_tokens")
+
+    def is_valid(self) -> bool:
+        return (not self.used) and (self.expires_at > datetime.utcnow())

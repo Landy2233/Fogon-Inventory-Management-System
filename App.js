@@ -8,6 +8,7 @@ import * as SecureStore from "expo-secure-store";
 import { loadToken, saveToken, clearToken } from "./src/api/client";
 import LoginScreen from "./src/screens/LoginScreen";
 import RegisterScreen from "./src/screens/RegisterScreen";
+import HomeScreen from "./src/screens/HomeScreen";
 import InventoryScreen from "./src/screens/InventoryScreen";
 import AddProductScreen from "./src/screens/AddProductScreen";
 import RequestScreen from "./src/screens/RequestScreen";
@@ -69,6 +70,11 @@ export default function App() {
         ) : (
           // --------- App flow ---------
           <>
+            {/* Home appears first after login */}
+            <Stack.Screen name="Home" options={{ headerShown: false }}>
+              {(props) => <HomeScreen {...props} />}
+            </Stack.Screen>
+
             <Stack.Screen name="Inventory" options={{ title: "Inventory" }}>
               {(props) => (
                 <InventoryScreen {...props} role={role} onLogout={onLogout} />

@@ -18,9 +18,12 @@ if not os.getenv("MYSQL_USER") or not os.getenv("MYSQL_DB"):
         if v is not None and not os.getenv(k):
             os.environ[k] = v
 
+
 class Config:
+    # ----- core secrets -----
     SECRET_KEY = os.getenv("SECRET_KEY", "devkey")
 
+    # ----- database (existing) -----
     MYSQL_USER = os.getenv("MYSQL_USER")
     MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD")
     MYSQL_HOST = os.getenv("MYSQL_HOST", "127.0.0.1")
@@ -31,5 +34,14 @@ class Config:
         f"mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}"
         f"@{MYSQL_HOST}:{MYSQL_PORT}/{MYSQL_DB}"
     )
-
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # ----- email (for password reset) -----
+    # Configure these in your .env:
+    # MAIL_SERVER, MAIL_PORT, MAIL_USERNAME, MAIL_PASSWORD, MAIL_DEFAULT_SENDER, MAIL_USE_TLS
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").lower() == "true"
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME")  # e.g. your Gmail
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")  # e.g. app password
+    MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", MAIL_USERNAME)

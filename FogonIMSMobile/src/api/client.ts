@@ -6,16 +6,16 @@ import { router } from "expo-router";
 /**
  * DEV BACKEND BASE URL
  *
- * Your Flask server is running on your Mac, e.g.:
- *   http://10.136.12.77:5001
- *
- * Replace DEV_LAN with your actual Wi-Fi IP.
+ * Flask server running on your Mac:
+ *   http://192.168.1.6:5001
  */
-// const DEV_LAN = "http://10.136.12.77:5001/api"; // ⬅️ PUT YOUR MAC IP HERE
-const DEV_LAN = "http://10.136.10.13:5001/api"; // ⬅️ PUT YOUR MAC IP HERE
+const DEV_LAN = "http://192.168.1.6:5001/api"; // ⬅️ your Mac IP + /api
 const PROD = "https://api.fogonims.com/api"; // placeholder for future deploy
 
 const API_BASE_URL = __DEV__ ? DEV_LAN : PROD;
+
+// ---------------- Token key ----------------
+const TOKEN_KEY = "token"; // SecureStore key – keep consistent everywhere
 
 // ---------------- Axios instance ----------------
 export const api = axios.create({
@@ -27,19 +27,18 @@ export const api = axios.create({
 
 /**
  * Save JWT token securely on the device and log a short preview in console.
- * Called after a successful login.
+ * Call this right after a successful login.
  */
 export async function saveToken(token: string) {
-  await SecureStore.setItemAsync("token", token);
+  await SecureStore.setItemAsync(TOKEN_KEY, token);
   console.log("✅ Saved token:", token.slice(0, 16) + "...");
 }
 
 /**
  * Load token from secure storage (if any).
- * Used when the app boots or before sending a request.
  */
 export async function loadToken() {
-  const t = await SecureStore.getItemAsync("token");
+  const t = await SecureStore.getItemAsync(TOKEN_KEY);
   return t;
 }
 
@@ -48,8 +47,20 @@ export async function loadToken() {
  * Called on logout or when a 401 tells us the token is invalid.
  */
 export async function clearToken() {
-  await SecureStore.deleteItemAsync("token");
+  await SecureStore.deleteItemAsync(TOKEN_KEY);
   console.log("🚪 Cleared token");
+}
+
+/**
+ * Optional: pre-load token and set default Authorization header once
+ * (e.g., on app startup in _layout.tsx).
+ */
+export async function initApiAuth() {
+  const t = await loadToken();
+  if (t) {
+    (api.defaults.headers as any).Authorization = `Bearer ${t}`;
+    console.log("🔐 Initialized API auth with token:", t.slice(0, 16) + "...");
+  }
 }
 
 // ---------------- Request Interceptor ----------------
@@ -59,14 +70,22 @@ export async function clearToken() {
  *   Authorization: Bearer <token>
  * if a token is present in SecureStore.
  */
-api.interceptors.request.use(async (cfg) => {
-  const t = await loadToken();
-  if (t) {
-    (cfg.headers as any).Authorization = `Bearer ${t}`;
-    // console.log("→ attaching Authorization");
-  }
-  return cfg;
-});
+api.interceptors.request.use(
+  async (cfg) => {
+    const t = await loadToken();
+    if (t) {
+      (cfg.headers as any).Authorization = `Bearer ${t}`;
+      // console.log("🔐 Using token:", t.slice(0, 16) + "...");
+    } else {
+      // Helpful for debugging 401s
+      console.log(
+        "⚠️ No token in SecureStore, sending request without Authorization"
+      );
+    }
+    return cfg;
+  },
+  (error) => Promise.reject(error)
+);
 
 // ---------------- Response Interceptor ----------------
 
@@ -79,6 +98,7 @@ api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const status = err?.response?.status;
+
     if (status === 401) {
       await clearToken();
       try {
@@ -87,6 +107,7 @@ api.interceptors.response.use(
         // ignore navigation errors if router isn't ready yet
       }
     }
+
     return Promise.reject(err);
   }
 );
@@ -95,9 +116,14 @@ api.interceptors.response.use(
 
 /**
  * Helper to fetch the currently logged-in user from /api/me.
- * Returns { id, username, role }.
+ * Returns { id, username, role, name }.
  */
 export async function fetchCurrentUser() {
   const { data } = await api.get("/me");
-  return data as { id: number; username: string; role?: string };
+  return data as {
+    id: number;
+    username: string;
+    role?: string;
+    name?: string;
+  };
 }
