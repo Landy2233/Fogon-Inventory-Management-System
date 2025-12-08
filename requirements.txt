@@ -11,3 +11,4 @@ python-dotenv
 SQLAlchemy
 PyMySQL
 gunicorn
+requests

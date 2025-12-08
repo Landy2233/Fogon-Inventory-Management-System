@@ -5,8 +5,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-import smtplib
-from email.message import EmailMessage
+import requests  # <-- Brevo HTTP API
 
 from flask import (
   Flask,
@@ -165,40 +164,62 @@ def create_app():
   # ----- password-reset token serializer -----
   serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
-  # ----- password-reset email sender -----
+  # ----- password-reset email sender via Brevo API -----
   def send_password_reset_email(email: str, token: str):
+    """
+    Send reset email using Brevo (Sendinblue) HTTP API.
+
+    Uses env vars:
+      BREVO_API_KEY  – your Brevo API key
+      MAIL_FROM      – sender email, e.g. fogonsystem@gmail.com
+
+    If the API key is missing or the request fails, we log the error
+    and still print the reset link in logs so you can debug.
+    """
     reset_link = f"{BASE_URL}/reset-password?token={token}"
 
-    msg = EmailMessage()
-    msg["Subject"] = "FogonIMS – Password Reset"
-    default_sender = app.config.get("MAIL_DEFAULT_SENDER") or app.config.get(
-      "MAIL_USERNAME"
-    )
-    msg["From"] = default_sender
-    msg["To"] = email
-    msg.set_content(
-      f"Hi,\n\n"
-      f"We received a request to reset your FogonIMS password.\n\n"
-      f"Click the link below to reset it:\n{reset_link}\n\n"
-      f"If you didn't request this, you can ignore this email.\n"
-    )
+    api_key = os.getenv("BREVO_API_KEY")
+    sender_email = os.getenv("MAIL_FROM", "fogonsystem@gmail.com")
+
+    if not api_key:
+      print("❌ BREVO_API_KEY is missing – cannot send reset email.")
+      print("Password reset link for debugging:", reset_link)
+      return
+
+    url = "https://api.brevo.com/v3/smtp/email"
+    payload = {
+      "sender": {
+        "name": "FogonIMS System",
+        "email": sender_email,
+      },
+      "to": [
+        {"email": email},
+      ],
+      "subject": "FogonIMS – Password Reset",
+      "htmlContent": f"""
+        <p>Hi,</p>
+        <p>We received a request to reset your FogonIMS password.</p>
+        <p>Click the link below to reset it:</p>
+        <p><a href="{reset_link}">{reset_link}</a></p>
+        <p>If you didn't request this, you can ignore this email.</p>
+      """,
+    }
+
+    headers = {
+      "accept": "application/json",
+      "content-type": "application/json",
+      "api-key": api_key,
+    }
 
     try:
-      mail_server = app.config.get("MAIL_SERVER", "smtp.gmail.com")
-      mail_port = int(app.config.get("MAIL_PORT", 587))
-      use_tls = str(app.config.get("MAIL_USE_TLS", "true")).lower() == "true"
-
-      with smtplib.SMTP(mail_server, mail_port) as server:
-        if use_tls:
-          server.starttls()
-        server.login(
-          app.config["MAIL_USERNAME"],
-          app.config["MAIL_PASSWORD"],
-        )
-        server.send_message(msg)
-        print("Password reset email sent to", email)
+      resp = requests.post(url, json=payload, headers=headers, timeout=10)
+      print("Brevo response:", resp.status_code, resp.text)
+      if resp.status_code >= 400:
+        print("❌ Failed to send reset email via Brevo.")
+        print("Password reset link for debugging:", reset_link)
     except Exception as e:
-      print("Error sending reset email:", e)
+      print("Error calling Brevo API:", e)
+      print("Password reset link for debugging:", reset_link)
 
   upload_folder = os.path.join(app.root_path, "static", "uploads")
   ensure_dir(upload_folder)

@@ -67,6 +67,17 @@ function isLowStockProduct(item: Product): boolean {
   );
 }
 
+// Build full URL for images using axios baseURL
+function absoluteUrl(path?: string | null) {
+  if (!path) return "";
+  if (path.startsWith("http")) return path;
+
+  const base = (api.defaults.baseURL as string) || "";
+  // strip trailing /api or /api/
+  const baseForFiles = base.replace(/\/api\/?$/, "");
+  return `${baseForFiles}${path}`;
+}
+
 export default function Inventory() {
   const [items, setItems] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,7 +108,7 @@ export default function Inventory() {
       setUnreadCount(unread);
     } catch (err: any) {
       console.log("❌ load error", err?.response?.data || err);
-      Alert.alert("Error", "Failed to load inventory.");
+      Alert.alert("Error", "Failed to load inventory or user info.");
     } finally {
       setLoading(false);
     }
@@ -105,7 +116,8 @@ export default function Inventory() {
 
   useEffect(() => {
     (async () => {
-      await loadToken(); // ensures token exists (or logs you out elsewhere)
+      const tk = await loadToken();
+      console.log("🔑 token:", tk ? tk.slice(0, 16) + "..." : "NONE");
       await loadAll();
     })();
   }, []);
@@ -140,8 +152,11 @@ export default function Inventory() {
     try {
       setItems((prev) => prev.filter((p) => p.id !== id)); // optimistic
       await api.delete(`/products/${id}`);
-    } catch (e) {
-      Alert.alert("Delete failed", "Unable to delete product.");
+    } catch (e: any) {
+      Alert.alert(
+        "Delete failed",
+        e?.response?.data?.error || "Unable to delete product."
+      );
       await loadAll();
     }
   };
@@ -165,7 +180,7 @@ export default function Inventory() {
             </View>
 
             <Text style={[styles.meta, lowStock && styles.metaLow]}>
-              Qty: {item.quantity} · ${item.price.toFixed(2)}
+              Qty: {item.quantity} · {formatCurrency(item.price)}
             </Text>
 
             {item.description ? (
@@ -234,6 +249,7 @@ export default function Inventory() {
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerLeftRow}>
+          {/* back to HomeScreen */}
           <TouchableOpacity
             onPress={() => router.replace("/HomeScreen")}
             style={styles.backBtn}
@@ -332,7 +348,7 @@ export default function Inventory() {
           keyExtractor={(x) => String(x.id)}
           renderItem={renderItem}
           numColumns={2}
-          columnWrapperStyle={styles.gridRow}
+          columnWrapperStyle={styles.columnWrapper}
           contentContainerStyle={styles.listContent}
           ListEmptyComponent={
             <View style={styles.empty}>
@@ -350,65 +366,65 @@ export default function Inventory() {
   );
 }
 
-function absoluteUrl(path?: string | null) {
-  if (!path) return "";
-  if (path.startsWith("http")) return path;
-  const BASE = __DEV__ ? "http://127.0.0.1:5001" : "http://192.168.1.3:5001";
-  return `${BASE}${path}`;
+function formatCurrency(v?: number) {
+  const n = typeof v === "number" ? v : 0;
+  return `$${n.toFixed(2)}`;
 }
 
 const styles = StyleSheet.create({
-  /* ---------------------- ROOT + LAYOUT ---------------------- */
-  safe: {
-    flex: 1,
-    backgroundColor: COLORS.bg,
-  },
+  safe: { flex: 1, backgroundColor: COLORS.bg },
 
-  listContent: {
-    paddingHorizontal: 10,
-    paddingBottom: 100,
-  },
-
-  gridRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-
-  /* ---------------------- HEADER ---------------------- */
+  /* HEADER */
   header: {
     paddingHorizontal: 16,
-    paddingVertical: 10,
     paddingTop: 8,
+    paddingBottom: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
-
   headerLeftRow: {
     flexDirection: "row",
     alignItems: "center",
   },
-
   backBtn: {
     paddingRight: 8,
     paddingVertical: 4,
   },
-
-  title: {
-    fontSize: 24,
-    fontWeight: "700",
-    color: COLORS.text,
-  },
-
-  subtitle: {
-    marginTop: 2,
-    color: COLORS.muted,
-  },
+  title: { fontSize: 24, fontWeight: "700", color: COLORS.text },
+  subtitle: { color: COLORS.muted, marginTop: 2 },
 
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
+  },
+
+  secondaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFEDD5",
+    gap: 4,
+  },
+  secondaryWideBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#FFEDD5",
+    gap: 4,
+    flex: 1,
+    marginLeft: 6,
+  },
+  secondaryText: {
+    color: "#EA580C",
+    fontWeight: "600",
+    fontSize: 13,
   },
 
   iconCircle: {
@@ -430,7 +446,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 2,
   },
-
   badgeText: {
     color: "#fff",
     fontSize: 10,
@@ -444,7 +459,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
 
-  /* ---------------------- BUTTONS ---------------------- */
+  /* ACTION ROW */
   actionRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -469,36 +484,21 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#FFEDD5",
-    gap: 4,
-  },
-
-  secondaryWideBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+  /* LIST / GRID */
+  listContent: {
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "#FFEDD5",
-    flex: 1,
-    marginLeft: 6,
-    gap: 4,
+    paddingBottom: 100,
+  },
+  columnWrapper: {
+    flexDirection: "row",
+    justifyContent: "space-between",
   },
 
-  secondaryText: {
-    color: "#EA580C",
-    fontSize: 13,
-    fontWeight: "600",
-  },
+  loader: { flex: 1, alignItems: "center", justifyContent: "center" },
+  empty: { marginTop: 60, alignItems: "center" },
+  emptyText: { marginTop: 8, color: COLORS.muted },
 
-  /* ---------------------- PRODUCT CARD ---------------------- */
+  /* CARD */
   card: {
     flex: 1,
     backgroundColor: COLORS.card,
@@ -510,21 +510,36 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
-
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
+  cardActions: {
+    marginLeft: 6,
+    flexDirection: "column",
+    gap: 6,
+  },
+  name: { fontSize: 16, fontWeight: "600", color: COLORS.text },
 
-  name: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: COLORS.text,
+  meta: { marginTop: 4, color: "#4B5563", fontSize: 13 },
+  metaLow: { color: "#B91C1C", fontWeight: "700" },
+
+  desc: { marginTop: 4, color: COLORS.muted, fontSize: 12 },
+
+  vendor: {
+    marginTop: 2,
+    color: "#6B7280",
+    fontSize: 11,
+  },
+  vendorContact: {
+    marginTop: 1,
+    color: "#9CA3AF",
+    fontSize: 11,
   },
 
   lowStockPill: {
-    marginLeft: 6,
+    marginLeft: 8,
     backgroundColor: "#FCA5A5",
     color: "#7F1D1D",
     fontSize: 10,
@@ -534,41 +549,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
-  meta: {
-    marginTop: 3,
-    fontSize: 13,
-    color: "#4B5563",
-  },
-
-  metaLow: {
-    color: "#B91C1C",
-    fontWeight: "700",
-  },
-
-  desc: {
-    marginTop: 3,
-    fontSize: 12,
-    color: COLORS.muted,
-  },
-
-  vendor: {
-    marginTop: 2,
-    fontSize: 10,
-    color: "#6B7280",
-  },
-
-  vendorContact: {
-    marginTop: 1,
-    fontSize: 10,
-    color: "#9CA3AF",
-  },
-
-  cardActions: {
-    marginLeft: 6,
-    flexDirection: "column",
-    gap: 6,
-  },
-
   iconBtn: {
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -576,31 +556,13 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
 
-  /* ---------------------- IMAGES ---------------------- */
   thumb: {
     width: "100%",
-    aspectRatio: 3 / 4,
-    backgroundColor: "#F3F4F6",
+    aspectRatio: 1,
     borderRadius: 10,
     marginTop: 8,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-  },
-
-  /* ---------------------- EMPTY / LOADING ---------------------- */
-  loader: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  empty: {
-    marginTop: 60,
-    alignItems: "center",
-  },
-
-  emptyText: {
-    marginTop: 8,
-    color: COLORS.muted,
+    borderColor: "#eee",
+    backgroundColor: "#F3F4F6",
   },
 });
