@@ -251,7 +251,7 @@ export default function Inventory() {
         <View style={styles.headerLeftRow}>
           {/* back to HomeScreen */}
           <TouchableOpacity
-            onPress={() => router.replace("/HomeScreen")}
+            onPress={() => router.replace("/reports")}
             style={styles.backBtn}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
