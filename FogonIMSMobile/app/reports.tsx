@@ -27,6 +27,36 @@ const COLORS = {
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
 
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const MONTH_VALUES = [
+  "01",
+  "02",
+  "03",
+  "04",
+  "05",
+  "06",
+  "07",
+  "08",
+  "09",
+  "10",
+  "11",
+  "12",
+];
+
 type Summary = {
   total_products: number;
   low_stock_count: number;
@@ -57,30 +87,6 @@ type CostAnalysisResponse = {
   breakdown: BreakdownRow[];
 };
 
-type MonthOption = {
-  value: string; // "2025-01"
-  label: string; // "Jan 2025"
-};
-
-// Build last 12 months as options
-function buildRecentMonths(): MonthOption[] {
-  const now = new Date();
-  const arr: MonthOption[] = [];
-  for (let i = 0; i < 12; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
-      2,
-      "0"
-    )}`;
-    const label = d.toLocaleString("default", {
-      month: "short",
-      year: "numeric",
-    }); // e.g. "Dec 2025"
-    arr.push({ value, label });
-  }
-  return arr;
-}
-
 export default function Reports() {
   const [range, setRange] = useState<"weekly" | "monthly">("monthly");
   const [summary, setSummary] = useState<Summary | null>(null);
@@ -93,36 +99,47 @@ export default function Reports() {
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
-  // Month-selection state
-  const [monthOptions] = useState<MonthOption[]>(() => buildRecentMonths());
-  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+  // Month/year dropdown state
+  const now = new Date();
+  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number>(
+    now.getMonth() // 0–11
+  );
+  const [selectedYear, setSelectedYear] = useState<number>(now.getFullYear());
+
+  const [showMonthMenu, setShowMonthMenu] = useState(false);
+  const [showYearMenu, setShowYearMenu] = useState(false);
+
+  // Years to show in dropdown (you can extend this if you’ll have more history)
+  const yearOptions = useMemo(() => {
+    const current = now.getFullYear();
+    return [current, current - 1, current - 2];
+  }, [now]);
+
+  const selectedMonthLabel = `${MONTH_LABELS[selectedMonthIndex]} ${selectedYear}`;
 
   const formatCurrency = (v: number) =>
     `$${v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
 
-  const selectedMonthLabel = useMemo(() => {
-    if (!selectedMonth) return null;
-    const opt = monthOptions.find((m) => m.value === selectedMonth);
-    return opt?.label || selectedMonth;
-  }, [selectedMonth, monthOptions]);
-
-  const periodLabel = selectedMonthLabel
-    ? selectedMonthLabel
-    : range === "weekly"
-    ? "this week"
-    : "this month";
+  const periodLabel =
+    range === "weekly" ? "this week" : selectedMonthLabel;
 
   const fetchAll = async () => {
     setLoading(true);
     setError(null);
 
-    // Decide query mode: either ?month=YYYY-MM or ?range=...
-    const queryParam = selectedMonth
-      ? `month=${selectedMonth}`
-      : `range=${range}`;
+    // Decide query mode:
+    // - Weekly: use ?range=weekly
+    // - Monthly: use ?month=YYYY-MM based on dropdown
+    let queryParam: string;
+    if (range === "weekly") {
+      queryParam = "range=weekly";
+    } else {
+      const monthValue = MONTH_VALUES[selectedMonthIndex]; // "01".."12"
+      queryParam = `month=${selectedYear}-${monthValue}`;
+    }
 
     try {
-      // Summary is always "current inventory snapshot"
+      // Summary = snapshot of current inventory (no range/month needed)
       const [sRes, uRes] = await Promise.all([
         api.get<Summary>("/reports/summary"),
         api.get<{ range: string; month?: string | null; items: UsageItem[] }>(
@@ -133,9 +150,9 @@ export default function Reports() {
       setSummary(sRes.data);
       setUsageItems(uRes.data.items || []);
 
-      const now = new Date();
-      const hh = now.getHours();
-      const mm = now.getMinutes().toString().padStart(2, "0");
+      const nowTime = new Date();
+      const hh = nowTime.getHours();
+      const mm = nowTime.getMinutes().toString().padStart(2, "0");
       const hour12 = ((hh + 11) % 12) + 1;
       const ampm = hh >= 12 ? "PM" : "AM";
       setLastUpdated(`${hour12}:${mm} ${ampm}`);
@@ -144,10 +161,10 @@ export default function Reports() {
       console.log("❌ summary/usage load error", e?.response?.data || e);
       setError("Failed to load reports.");
       setLoading(false);
-      return; // don’t try cost if the basics failed
+      return;
     }
 
-    // 2) OPTIONAL: cost analysis (don’t block the whole screen if it fails)
+    // Cost analysis (optional)
     try {
       const cRes = await api.get<CostAnalysisResponse>(
         `/reports/cost-analysis?${queryParam}`
@@ -156,7 +173,6 @@ export default function Reports() {
       setBreakdown(cRes.data.breakdown || []);
     } catch (e: any) {
       console.log("⚠️ cost analysis load error", e?.response?.data || e);
-      // Leave chart & breakdown empty; no user-facing error
       setCostPoints([]);
       setBreakdown([]);
     } finally {
@@ -166,8 +182,7 @@ export default function Reports() {
 
   useEffect(() => {
     fetchAll();
-    // Re-fetch when user switches range or month
-  }, [range, selectedMonth]);
+  }, [range, selectedMonthIndex, selectedYear]);
 
   const chartPoints: CostPoint[] = useMemo(() => {
     if (!costPoints || costPoints.length === 0) return [];
@@ -217,11 +232,13 @@ export default function Reports() {
 
   const topItems = usageItems.slice(0, 3);
 
-  const clearMonthIfNeeded = (newRange: "weekly" | "monthly") => {
-    // Optional: when switching to weekly, clear the month selection
-    if (newRange === "weekly" && selectedMonth) {
-      setSelectedMonth(null);
-    }
+  const clearDropdownMenus = () => {
+    setShowMonthMenu(false);
+    setShowYearMenu(false);
+  };
+
+  const handleRangeChange = (newRange: "weekly" | "monthly") => {
+    clearDropdownMenus();
     setRange(newRange);
   };
 
@@ -231,7 +248,10 @@ export default function Reports() {
       <View style={styles.headerRow}>
         <TouchableOpacity
           style={styles.backBtn}
-          onPress={() => router.back()}
+          onPress={() => {
+            clearDropdownMenus();
+            router.back();
+          }}
           activeOpacity={0.7}
         >
           <Ionicons name="chevron-back" size={22} color={COLORS.text} />
@@ -244,14 +264,14 @@ export default function Reports() {
             <TouchableOpacity
               style={[
                 styles.rangeChip,
-                range === "weekly" && !selectedMonth && styles.rangeChipActive,
+                range === "weekly" && styles.rangeChipActive,
               ]}
-              onPress={() => clearMonthIfNeeded("weekly")}
+              onPress={() => handleRangeChange("weekly")}
             >
               <Text
                 style={[
                   styles.rangeText,
-                  range === "weekly" && !selectedMonth && styles.rangeTextActive,
+                  range === "weekly" && styles.rangeTextActive,
                 ]}
               >
                 Weekly
@@ -260,16 +280,14 @@ export default function Reports() {
             <TouchableOpacity
               style={[
                 styles.rangeChip,
-                range === "monthly" && !selectedMonth && styles.rangeChipActive,
+                range === "monthly" && styles.rangeChipActive,
               ]}
-              onPress={() => setRange("monthly")}
+              onPress={() => handleRangeChange("monthly")}
             >
               <Text
                 style={[
                   styles.rangeText,
-                  range === "monthly" &&
-                    !selectedMonth &&
-                    styles.rangeTextActive,
+                  range === "monthly" && styles.rangeTextActive,
                 ]}
               >
                 Monthly
@@ -279,7 +297,10 @@ export default function Reports() {
 
           <TouchableOpacity
             style={styles.refreshBtn}
-            onPress={fetchAll}
+            onPress={() => {
+              clearDropdownMenus();
+              fetchAll();
+            }}
             activeOpacity={0.7}
           >
             <Ionicons name="refresh" size={18} color={COLORS.primary} />
@@ -292,10 +313,116 @@ export default function Reports() {
         <Text style={styles.updatedText}>
           Last updated: {lastUpdated || "--"}
         </Text>
-        {selectedMonthLabel && (
-          <Text style={styles.selectedMonthPill}>{selectedMonthLabel}</Text>
-        )}
       </View>
+
+      {/* Month/Year dropdowns – ONLY when Monthly is selected */}
+      {range === "monthly" && (
+        <View style={styles.dropdownRow}>
+          {/* Month dropdown */}
+          <View style={{ flex: 1, marginRight: 8 }}>
+            <Text style={styles.dropdownLabel}>Month</Text>
+            <TouchableOpacity
+              style={styles.dropdownBox}
+              activeOpacity={0.8}
+              onPress={() => {
+                setShowMonthMenu((prev) => !prev);
+                setShowYearMenu(false);
+              }}
+            >
+              <Text style={styles.dropdownValue}>
+                {MONTH_LABELS[selectedMonthIndex]}
+              </Text>
+              <Ionicons
+                name={showMonthMenu ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+
+            {showMonthMenu && (
+              <View style={styles.dropdownMenu}>
+                <ScrollView style={{ maxHeight: 200 }}>
+                  {MONTH_LABELS.map((label, idx) => {
+                    const active = idx === selectedMonthIndex;
+                    return (
+                      <TouchableOpacity
+                        key={label}
+                        style={[
+                          styles.dropdownItem,
+                          active && styles.dropdownItemActive,
+                        ]}
+                        onPress={() => {
+                          setSelectedMonthIndex(idx);
+                          setShowMonthMenu(false);
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.dropdownItemText,
+                            active && styles.dropdownItemTextActive,
+                          ]}
+                        >
+                          {label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          {/* Year dropdown */}
+          <View style={{ width: 110 }}>
+            <Text style={styles.dropdownLabel}>Year</Text>
+            <TouchableOpacity
+              style={styles.dropdownBox}
+              activeOpacity={0.8}
+              onPress={() => {
+                setShowYearMenu((prev) => !prev);
+                setShowMonthMenu(false);
+              }}
+            >
+              <Text style={styles.dropdownValue}>{selectedYear}</Text>
+              <Ionicons
+                name={showYearMenu ? "chevron-up" : "chevron-down"}
+                size={16}
+                color={COLORS.muted}
+              />
+            </TouchableOpacity>
+
+            {showYearMenu && (
+              <View style={styles.dropdownMenu}>
+                {yearOptions.map((year) => {
+                  const active = year === selectedYear;
+                  return (
+                    <TouchableOpacity
+                      key={year}
+                      style={[
+                        styles.dropdownItem,
+                        active && styles.dropdownItemActive,
+                      ]}
+                      onPress={() => {
+                        setSelectedYear(year);
+                        setShowYearMenu(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownItemText,
+                          active && styles.dropdownItemTextActive,
+                        ]}
+                      >
+                        {year}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        </View>
+      )}
 
       {loading && !summary ? (
         <View style={styles.loader}>
@@ -312,51 +439,6 @@ export default function Reports() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
-
-          {/* Month picker row */}
-          <View style={styles.monthRow}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Ionicons
-                name="calendar-clear-outline"
-                size={16}
-                color={COLORS.muted}
-              />
-              <Text style={styles.monthLabel}>View by month</Text>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ paddingLeft: 4 }}
-            >
-              {monthOptions.map((m) => {
-                const active = selectedMonth === m.value;
-                return (
-                  <TouchableOpacity
-                    key={m.value}
-                    style={[
-                      styles.monthChip,
-                      active && styles.monthChipActive,
-                    ]}
-                    onPress={() =>
-                      setSelectedMonth((curr) =>
-                        curr === m.value ? null : m.value
-                      )
-                    }
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.monthChipText,
-                        active && styles.monthChipTextActive,
-                      ]}
-                    >
-                      {m.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </View>
 
           {/* Overview */}
           <View style={styles.card}>
@@ -408,7 +490,8 @@ export default function Reports() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Top Requested Items</Text>
             <Text style={styles.cardSubtitle}>
-              Based on approved stock requests for {periodLabel}.
+              Based on approved stock requests for{" "}
+              {range === "weekly" ? "this week" : selectedMonthLabel}.
             </Text>
 
             {topItems.length === 0 ? (
@@ -439,7 +522,7 @@ export default function Reports() {
             <Text style={styles.cardTitle}>Cost Analysis</Text>
             <Text style={styles.cardSubtitle}>
               Estimated spend from approved requests (qty × price) for{" "}
-              {periodLabel}.
+              {range === "weekly" ? "this week" : selectedMonthLabel}.
             </Text>
 
             {chartPoints.length === 0 ? (
@@ -502,7 +585,8 @@ export default function Reports() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Cost Breakdown</Text>
             <Text style={styles.cardSubtitle}>
-              Spend by category from approved requests for {periodLabel}.
+              Spend by category from approved requests for{" "}
+              {range === "weekly" ? "this week" : selectedMonthLabel}.
             </Text>
 
             {breakdown.length === 0 ? (
@@ -610,16 +694,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: COLORS.muted,
   },
-  selectedMonthPill: {
-    marginLeft: "auto",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-    backgroundColor: "#FFEDD5",
-    fontSize: 11,
-    color: COLORS.primary,
-    fontWeight: "600",
-  },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   errorBanner: {
     backgroundColor: "#FEE2E2",
@@ -631,40 +705,64 @@ const styles = StyleSheet.create({
     color: "#B91C1C",
     fontSize: 13,
   },
-  monthRow: {
-    marginTop: 6,
-    marginBottom: 4,
-    paddingVertical: 6,
-    paddingHorizontal: 2,
+
+  // Dropdown styles
+  dropdownRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+    paddingHorizontal: 16,
+    paddingBottom: 4,
+    marginTop: 4,
   },
-  monthLabel: {
-    marginLeft: 4,
-    fontSize: 13,
+  dropdownLabel: {
+    fontSize: 12,
     color: COLORS.muted,
+    marginBottom: 4,
     fontWeight: "600",
   },
-  monthChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  dropdownBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: COLORS.border,
     borderRadius: 999,
-    backgroundColor: "#E5E7EB",
-    marginRight: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: "#FFFFFF",
   },
-  monthChipActive: {
-    backgroundColor: "#FDBA74",
-  },
-  monthChipText: {
-    fontSize: 12,
-    color: "#4B5563",
+  dropdownValue: {
+    fontSize: 13,
+    color: COLORS.text,
     fontWeight: "500",
   },
-  monthChipTextActive: {
-    color: "#7C2D12",
-    fontWeight: "700",
+  dropdownMenu: {
+    position: "absolute",
+    top: 58,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    ...(iosShadow as any),
+    zIndex: 20,
   },
+  dropdownItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  dropdownItemActive: {
+    backgroundColor: "#FEF3C7",
+  },
+  dropdownItemText: {
+    fontSize: 13,
+    color: COLORS.text,
+  },
+  dropdownItemTextActive: {
+    fontWeight: "700",
+    color: "#92400E",
+  },
+
   card: {
     backgroundColor: COLORS.card,
     borderRadius: 22,
