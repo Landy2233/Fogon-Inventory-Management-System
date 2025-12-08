@@ -52,9 +52,34 @@ type BreakdownRow = {
 
 type CostAnalysisResponse = {
   range: string;
+  month?: string | null;
   points: CostPoint[];
   breakdown: BreakdownRow[];
 };
+
+type MonthOption = {
+  value: string; // "2025-01"
+  label: string; // "Jan 2025"
+};
+
+// Build last 12 months as options
+function buildRecentMonths(): MonthOption[] {
+  const now = new Date();
+  const arr: MonthOption[] = [];
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const value = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}`;
+    const label = d.toLocaleString("default", {
+      month: "short",
+      year: "numeric",
+    }); // e.g. "Dec 2025"
+    arr.push({ value, label });
+  }
+  return arr;
+}
 
 export default function Reports() {
   const [range, setRange] = useState<"weekly" | "monthly">("monthly");
@@ -68,19 +93,40 @@ export default function Reports() {
 
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
 
+  // Month-selection state
+  const [monthOptions] = useState<MonthOption[]>(() => buildRecentMonths());
+  const [selectedMonth, setSelectedMonth] = useState<string | null>(null);
+
   const formatCurrency = (v: number) =>
     `$${v.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}`;
+
+  const selectedMonthLabel = useMemo(() => {
+    if (!selectedMonth) return null;
+    const opt = monthOptions.find((m) => m.value === selectedMonth);
+    return opt?.label || selectedMonth;
+  }, [selectedMonth, monthOptions]);
+
+  const periodLabel = selectedMonthLabel
+    ? selectedMonthLabel
+    : range === "weekly"
+    ? "this week"
+    : "this month";
 
   const fetchAll = async () => {
     setLoading(true);
     setError(null);
 
+    // Decide query mode: either ?month=YYYY-MM or ?range=...
+    const queryParam = selectedMonth
+      ? `month=${selectedMonth}`
+      : `range=${range}`;
+
     try {
-      // 1) REQUIRED: summary + usage
+      // Summary is always "current inventory snapshot"
       const [sRes, uRes] = await Promise.all([
-        api.get<Summary>(`/reports/summary?range=${range}`),
-        api.get<{ range: string; items: UsageItem[] }>(
-          `/reports/usage?range=${range}`
+        api.get<Summary>("/reports/summary"),
+        api.get<{ range: string; month?: string | null; items: UsageItem[] }>(
+          `/reports/usage?${queryParam}`
         ),
       ]);
 
@@ -104,7 +150,7 @@ export default function Reports() {
     // 2) OPTIONAL: cost analysis (don’t block the whole screen if it fails)
     try {
       const cRes = await api.get<CostAnalysisResponse>(
-        `/reports/cost-analysis?range=${range}`
+        `/reports/cost-analysis?${queryParam}`
       );
       setCostPoints(cRes.data.points || []);
       setBreakdown(cRes.data.breakdown || []);
@@ -120,7 +166,8 @@ export default function Reports() {
 
   useEffect(() => {
     fetchAll();
-  }, [range]);
+    // Re-fetch when user switches range or month
+  }, [range, selectedMonth]);
 
   const chartPoints: CostPoint[] = useMemo(() => {
     if (!costPoints || costPoints.length === 0) return [];
@@ -170,6 +217,14 @@ export default function Reports() {
 
   const topItems = usageItems.slice(0, 3);
 
+  const clearMonthIfNeeded = (newRange: "weekly" | "monthly") => {
+    // Optional: when switching to weekly, clear the month selection
+    if (newRange === "weekly" && selectedMonth) {
+      setSelectedMonth(null);
+    }
+    setRange(newRange);
+  };
+
   return (
     <SafeAreaView style={styles.safe}>
       {/* Header */}
@@ -189,14 +244,14 @@ export default function Reports() {
             <TouchableOpacity
               style={[
                 styles.rangeChip,
-                range === "weekly" && styles.rangeChipActive,
+                range === "weekly" && !selectedMonth && styles.rangeChipActive,
               ]}
-              onPress={() => setRange("weekly")}
+              onPress={() => clearMonthIfNeeded("weekly")}
             >
               <Text
                 style={[
                   styles.rangeText,
-                  range === "weekly" && styles.rangeTextActive,
+                  range === "weekly" && !selectedMonth && styles.rangeTextActive,
                 ]}
               >
                 Weekly
@@ -205,14 +260,16 @@ export default function Reports() {
             <TouchableOpacity
               style={[
                 styles.rangeChip,
-                range === "monthly" && styles.rangeChipActive,
+                range === "monthly" && !selectedMonth && styles.rangeChipActive,
               ]}
               onPress={() => setRange("monthly")}
             >
               <Text
                 style={[
                   styles.rangeText,
-                  range === "monthly" && styles.rangeTextActive,
+                  range === "monthly" &&
+                    !selectedMonth &&
+                    styles.rangeTextActive,
                 ]}
               >
                 Monthly
@@ -235,6 +292,9 @@ export default function Reports() {
         <Text style={styles.updatedText}>
           Last updated: {lastUpdated || "--"}
         </Text>
+        {selectedMonthLabel && (
+          <Text style={styles.selectedMonthPill}>{selectedMonthLabel}</Text>
+        )}
       </View>
 
       {loading && !summary ? (
@@ -253,11 +313,56 @@ export default function Reports() {
             </View>
           )}
 
+          {/* Month picker row */}
+          <View style={styles.monthRow}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Ionicons
+                name="calendar-clear-outline"
+                size={16}
+                color={COLORS.muted}
+              />
+              <Text style={styles.monthLabel}>View by month</Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingLeft: 4 }}
+            >
+              {monthOptions.map((m) => {
+                const active = selectedMonth === m.value;
+                return (
+                  <TouchableOpacity
+                    key={m.value}
+                    style={[
+                      styles.monthChip,
+                      active && styles.monthChipActive,
+                    ]}
+                    onPress={() =>
+                      setSelectedMonth((curr) =>
+                        curr === m.value ? null : m.value
+                      )
+                    }
+                    activeOpacity={0.8}
+                  >
+                    <Text
+                      style={[
+                        styles.monthChipText,
+                        active && styles.monthChipTextActive,
+                      ]}
+                    >
+                      {m.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+
           {/* Overview */}
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Overview</Text>
             <Text style={styles.cardSubtitle}>
-              High-level snapshot for this {range === "weekly" ? "week" : "month"}.
+              High-level snapshot of your current inventory.
             </Text>
 
             <View style={styles.overviewRow}>
@@ -303,8 +408,7 @@ export default function Reports() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Top Requested Items</Text>
             <Text style={styles.cardSubtitle}>
-              Based on approved stock requests this{" "}
-              {range === "weekly" ? "week" : "month"}.
+              Based on approved stock requests for {periodLabel}.
             </Text>
 
             {topItems.length === 0 ? (
@@ -334,7 +438,8 @@ export default function Reports() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Cost Analysis</Text>
             <Text style={styles.cardSubtitle}>
-              Estimated spend from approved requests (qty × price) this period.
+              Estimated spend from approved requests (qty × price) for{" "}
+              {periodLabel}.
             </Text>
 
             {chartPoints.length === 0 ? (
@@ -397,7 +502,7 @@ export default function Reports() {
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Cost Breakdown</Text>
             <Text style={styles.cardSubtitle}>
-              Spend by category from approved requests this period.
+              Spend by category from approved requests for {periodLabel}.
             </Text>
 
             {breakdown.length === 0 ? (
@@ -499,11 +604,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 18,
     paddingBottom: 4,
-    gap: 4,
+    gap: 6,
   },
   updatedText: {
     fontSize: 12,
     color: COLORS.muted,
+  },
+  selectedMonthPill: {
+    marginLeft: "auto",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    backgroundColor: "#FFEDD5",
+    fontSize: 11,
+    color: COLORS.primary,
+    fontWeight: "600",
   },
   loader: { flex: 1, justifyContent: "center", alignItems: "center" },
   errorBanner: {
@@ -515,6 +630,40 @@ const styles = StyleSheet.create({
   errorText: {
     color: "#B91C1C",
     fontSize: 13,
+  },
+  monthRow: {
+    marginTop: 6,
+    marginBottom: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  monthLabel: {
+    marginLeft: 4,
+    fontSize: 13,
+    color: COLORS.muted,
+    fontWeight: "600",
+  },
+  monthChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "#E5E7EB",
+    marginRight: 6,
+  },
+  monthChipActive: {
+    backgroundColor: "#FDBA74",
+  },
+  monthChipText: {
+    fontSize: 12,
+    color: "#4B5563",
+    fontWeight: "500",
+  },
+  monthChipTextActive: {
+    color: "#7C2D12",
+    fontWeight: "700",
   },
   card: {
     backgroundColor: COLORS.card,

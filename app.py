@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-import requests  # ← for Brevo HTTP API
+import requests  # Brevo HTTP API
 
 from flask import (
   Flask,
@@ -164,7 +164,7 @@ def create_app():
   # ----- password-reset token serializer -----
   serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
-  # ----- password-reset email sender (Brevo API) -----
+  # ----- password-reset email sender (Brevo) -----
   def send_password_reset_email(email: str, token: str):
     reset_link = f"{BASE_URL}/reset-password?token={token}"
 
@@ -210,11 +210,13 @@ def create_app():
       print("Error calling Brevo API:", e)
       print("Password reset link for debugging:", reset_link)
 
+  # ---- Files / uploads ----
   upload_folder = os.path.join(app.root_path, "static", "uploads")
   ensure_dir(upload_folder)
   app.config["UPLOAD_FOLDER"] = upload_folder
   app.config.setdefault("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
 
+  # ---- Extensions ----
   db.init_app(app)
   CORS(app, resources={r"/api/*": {"origins": "*"}})
   JWTManager(app)
@@ -230,7 +232,6 @@ def create_app():
   def index():
     return jsonify({"msg": "FogonIMS API"}), 200
 
-  # so mobile api.get("/") hits something valid when base url ends with /api
   @app.route("/api", methods=["GET"])
   def api_root():
     return jsonify({"msg": "FogonIMS API root"}), 200
@@ -396,8 +397,7 @@ def create_app():
             body {
               margin: 0;
               padding: 0;
-              font-family: system-ui, -apple-system, BlinkMacSystemFont,
-                           "Segoe UI", sans-serif;
+              font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
               background: linear-gradient(135deg, #f97316, #facc15);
               display: flex;
               align-items: center;
@@ -453,7 +453,7 @@ def create_app():
       </html>
       """
 
-    # GET: show reset form (mobile-friendly, iPhone style)
+    # GET: iPhone-friendly reset form
     html = """
     <!doctype html>
     <html lang="en">
@@ -544,9 +544,6 @@ def create_app():
             border-color: #f97316;
             box-shadow: 0 0 0 1px rgba(249,115,22,0.2);
             background-color: #ffffff;
-          }
-          .field {
-            margin-bottom: 14px;
           }
           button {
             margin-top: 6px;
@@ -1039,7 +1036,10 @@ def create_app():
       return jsonify({"error": "Request not found"}), 404
 
     if r.requested_by != uid or role == "manager":
-      return jsonify({"error": "You can only edit your own pending requests"}), 403
+      return (
+        jsonify({"error": "You can only edit your own pending requests"}),
+        403,
+      )
     if r.status != "Pending":
       return jsonify({"error": "Only pending requests can be edited"}), 400
 
@@ -1089,7 +1089,10 @@ def create_app():
       return jsonify({"error": "Request not found"}), 404
 
     if r.requested_by != uid or role == "manager":
-      return jsonify({"error": "You can only delete your own pending requests"}), 403
+      return (
+        jsonify({"error": "You can only delete your own pending requests"}),
+        403,
+      )
     if r.status != "Pending":
       return jsonify({"error": "Only pending requests can be deleted"}), 400
 
@@ -1289,20 +1292,48 @@ def create_app():
     """
     Usage / top requested items based on approved stock requests.
 
-    Query param:
-      ?range=weekly  (last 7 days)
-      ?range=monthly (last 30 days)
+    Modes:
+      - Rolling:
+          ?range=weekly   -> last 7 days
+          ?range=monthly  -> last 30 days
+      - Calendar month:
+          ?month=YYYY-MM  -> exact month window (e.g. 2025-01)
     """
     claims = get_jwt()
     role = (claims.get("role") or "").lower()
     if role != "manager":
       return jsonify({"error": "Only manager can view reports"}), 403
 
-    range_param = (request.args.get("range") or "weekly").lower()
-    days = 7 if range_param == "weekly" else 30
-
+    month_param = (request.args.get("month") or "").strip()
     now_utc = datetime.now(timezone.utc)
-    cutoff = now_utc - timedelta(days=days)
+
+    if month_param:
+      # ----- Specific calendar month, e.g. 2025-01 -----
+      try:
+        year_str, month_str = month_param.split("-")
+        year = int(year_str)
+        month = int(month_str)
+        if not (1 <= month <= 12):
+          raise ValueError("month out of range")
+
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+          end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+          end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+        range_label = "month"
+      except Exception:
+        return jsonify({"error": "month must be in YYYY-MM format"}), 400
+    else:
+      # ----- Rolling window: weekly/monthly (current behavior) -----
+      range_param = (request.args.get("range") or "weekly").lower()
+      days = 7 if range_param == "weekly" else 30
+
+      end = now_utc
+      start = now_utc - timedelta(days=days)
+      range_label = range_param
+      month_param = None   # no specific calendar month
 
     q = (
       db.session.query(
@@ -1315,7 +1346,8 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= cutoff)
+      .filter(StockRequest.created_at >= start)
+      .filter(StockRequest.created_at < end)
       .group_by(Product.id, Product.name)
       .order_by(db.func.sum(StockRequest.quantity).desc())
     )
@@ -1331,27 +1363,64 @@ def create_app():
       for r in rows
     ]
 
-    return jsonify({"range": range_param, "items": data}), 200
+    return jsonify({
+      "range": range_label,   # "weekly" | "monthly" | "month"
+      "month": month_param,   # e.g. "2025-01" or null
+      "items": data,
+    }), 200
 
   @app.get("/api/reports/cost-analysis")
   @jwt_required()
   def api_reports_cost_analysis():
     """
     Cost analysis for line chart + category breakdown.
+
+    Modes:
+      - Rolling:
+          ?range=weekly   -> last 7 days
+          ?range=monthly  -> last 30 days
+      - Calendar month:
+          ?month=YYYY-MM  -> exact month window (e.g. 2025-01)
     """
     claims = get_jwt()
     role = (claims.get("role") or "").lower()
     if role != "manager":
       return jsonify({"error": "Only manager can view reports"}), 403
 
-    range_param = (request.args.get("range") or "weekly").lower()
-    days = 7 if range_param == "weekly" else 30
-
+    month_param = (request.args.get("month") or "").strip()
     now_utc = datetime.now(timezone.utc)
-    cutoff = now_utc - timedelta(days=days)
+
+    if month_param:
+      # ----- Specific calendar month -----
+      try:
+        year_str, month_str = month_param.split("-")
+        year = int(year_str)
+        month = int(month_str)
+        if not (1 <= month <= 12):
+          raise ValueError("month out of range")
+
+        start = datetime(year, month, 1, tzinfo=timezone.utc)
+        if month == 12:
+          end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        else:
+          end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+
+        range_label = "month"
+      except Exception:
+        return jsonify({"error": "month must be in YYYY-MM format"}), 400
+    else:
+      # ----- Rolling window (current behavior) -----
+      range_param = (request.args.get("range") or "weekly").lower()
+      days = 7 if range_param == "weekly" else 30
+
+      end = now_utc
+      start = now_utc - timedelta(days=days)
+      range_label = range_param
+      month_param = None
 
     day_expr = db.func.date(StockRequest.created_at)
 
+    # ---- Line chart: cost per day ----
     q_line = (
       db.session.query(
         day_expr.label("day"),
@@ -1361,7 +1430,8 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= cutoff)
+      .filter(StockRequest.created_at >= start)
+      .filter(StockRequest.created_at < end)
       .group_by(day_expr)
       .order_by(day_expr)
     )
@@ -1381,6 +1451,7 @@ def create_app():
         }
       )
 
+    # ---- Category breakdown: cost by product.category ----
     q_breakdown = (
       db.session.query(
         Product.category.label("category"),
@@ -1390,7 +1461,8 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= cutoff)
+      .filter(StockRequest.created_at >= start)
+      .filter(StockRequest.created_at < end)
       .group_by(Product.category)
       .order_by(db.func.sum(StockRequest.quantity * Product.price).desc())
     )
@@ -1404,16 +1476,12 @@ def create_app():
       for r in breakdown_rows
     ]
 
-    return (
-      jsonify(
-        {
-          "range": range_param,
-          "points": points,
-          "breakdown": breakdown,
-        }
-      ),
-      200,
-    )
+    return jsonify({
+      "range": range_label,   # "weekly" | "monthly" | "month"
+      "month": month_param,
+      "points": points,
+      "breakdown": breakdown,
+    }), 200
 
   # ---------- Health ----------
   @app.get("/api/health")
