@@ -5,7 +5,8 @@ import time
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
-import requests  # Brevo HTTP API
+import requests as http_requests  # Brevo HTTP client
+from email.message import EmailMessage   # still imported but not used; OK
 
 from flask import (
   Flask,
@@ -31,6 +32,10 @@ from config import Config
 
 EASTERN = ZoneInfo("America/New_York")
 BASE_URL = os.getenv("FOGON_BASE_URL", "http://localhost:5001")
+
+BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
+BREVO_SENDER_EMAIL = os.getenv("MAIL_FROM", "no-reply@fogonims.com")
+BREVO_SENDER_NAME = os.getenv("MAIL_FROM_NAME", "FogonIMS")
 
 
 # ---------- Time helper ----------
@@ -168,55 +173,47 @@ def create_app():
   def send_password_reset_email(email: str, token: str):
     reset_link = f"{BASE_URL}/reset-password?token={token}"
 
-    api_key = os.getenv("BREVO_API_KEY")
-    sender_email = os.getenv("MAIL_FROM", "fogonsystem@gmail.com")
+    # Always log link for debugging
+    print("Password reset link for debugging:", reset_link)
 
-    if not api_key:
-      print("❌ BREVO_API_KEY is missing – cannot send reset email.")
-      print("Password reset link for debugging:", reset_link)
+    if not BREVO_API_KEY:
+      print("BREVO_API_KEY is not set – skipping actual email send.")
       return
 
-    url = "https://api.brevo.com/v3/smtp/email"
-    payload = {
-      "sender": {"email": sender_email, "name": "FogonIMS"},
-      "to": [{"email": email}],
-      "subject": "FogonIMS – Password Reset",
-      "htmlContent": f"""
-        <p>Hi,</p>
-        <p>We received a request to reset your FogonIMS password.</p>
-        <p>
-          <a href="{reset_link}" style="
-            display:inline-block;
-            padding:10px 18px;
-            border-radius:999px;
-            background:#f97316;
-            color:#ffffff;
-            text-decoration:none;
-          ">Reset Password</a>
-        </p>
-        <p>If you didn't request this, you can ignore this email.</p>
-      """,
-    }
-    headers = {
-      "accept": "application/json",
-      "content-type": "application/json",
-      "api-key": api_key,
-    }
-
     try:
-      resp = requests.post(url, json=payload, headers=headers, timeout=10)
-      print("Brevo response:", resp.status_code, resp.text)
+      url = "https://api.brevo.com/v3/smtp/email"
+      headers = {
+        "accept": "application/json",
+        "api-key": BREVO_API_KEY,
+        "content-type": "application/json",
+      }
+      payload = {
+        "sender": {
+          "name": BREVO_SENDER_NAME,
+          "email": BREVO_SENDER_EMAIL,
+        },
+        "to": [{"email": email}],
+        "subject": "FogonIMS – Password Reset",
+        "textContent": (
+          "Hi,\n\n"
+          "We received a request to reset your FogonIMS password.\n\n"
+          f"Click the link below to reset it:\n{reset_link}\n\n"
+          "If you didn't request this, you can ignore this email.\n"
+        ),
+      }
+      resp = http_requests.post(url, headers=headers, json=payload, timeout=10)
+      if resp.status_code >= 400:
+        print("Brevo error:", resp.status_code, resp.text)
+      else:
+        print("Password reset email sent via Brevo:", email)
     except Exception as e:
       print("Error calling Brevo API:", e)
-      print("Password reset link for debugging:", reset_link)
 
-  # ---- Files / uploads ----
   upload_folder = os.path.join(app.root_path, "static", "uploads")
   ensure_dir(upload_folder)
   app.config["UPLOAD_FOLDER"] = upload_folder
   app.config.setdefault("MAX_CONTENT_LENGTH", 16 * 1024 * 1024)
 
-  # ---- Extensions ----
   db.init_app(app)
   CORS(app, resources={r"/api/*": {"origins": "*"}})
   JWTManager(app)
@@ -231,10 +228,6 @@ def create_app():
   @app.route("/")
   def index():
     return jsonify({"msg": "FogonIMS API"}), 200
-
-  @app.route("/api", methods=["GET"])
-  def api_root():
-    return jsonify({"msg": "FogonIMS API root"}), 200
 
   @app.route("/static/uploads/<path:filename>")
   def uploaded_file(filename):
@@ -350,9 +343,15 @@ def create_app():
       .first()
     )
 
-    if user:
-      token = serializer.dumps({"uid": user.id})
+    if not user:
+      return jsonify({"ok": True}), 200
+
+    token = serializer.dumps({"uid": user.id})
+
+    try:
       send_password_reset_email(user.email, token)
+    except Exception as e:
+      print("Error sending reset email:", e)
 
     return jsonify({"ok": True}), 200
 
@@ -453,79 +452,47 @@ def create_app():
       </html>
       """
 
-    # GET: iPhone-friendly reset form
+    # GET: show reset form
     html = """
     <!doctype html>
-    <html lang="en">
+    <html>
       <head>
         <meta charset="utf-8">
         <title>Reset Password – FogonIMS</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
         <style>
-          :root {
-            color-scheme: light;
-          }
-          * {
-            box-sizing: border-box;
-          }
           body {
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
-                         "SF Pro Display", system-ui, "Segoe UI", sans-serif;
-            background: linear-gradient(145deg, #f97316, #fb923c);
-            min-height: 100vh;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: linear-gradient(135deg, #f97316, #facc15);
             display: flex;
             align-items: center;
             justify-content: center;
-          }
-          .safe-area {
-            padding: 16px;
-            width: 100%;
-            max-width: 480px;
+            min-height: 100vh;
           }
           .card {
             background: #ffffff;
-            padding: 22px 20px 20px;
-            border-radius: 24px;
-            box-shadow:
-              0 18px 45px rgba(0, 0, 0, 0.18),
-              0 0 0 1px rgba(15, 23, 42, 0.03);
-          }
-          .pill {
-            display: inline-flex;
-            align-items: center;
-            padding: 2px 10px;
-            border-radius: 999px;
-            background: #fef3c7;
-            color: #92400e;
-            font-size: 11px;
-            font-weight: 600;
-            letter-spacing: .03em;
-            text-transform: uppercase;
-            margin-bottom: 8px;
+            padding: 32px 28px;
+            border-radius: 16px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+            max-width: 420px;
+            width: 100%;
           }
           h1 {
-            margin: 0;
-            font-size: 22px;
-            font-weight: 700;
+            margin: 0 0 6px 0;
+            font-size: 1.6rem;
             color: #111827;
           }
-          .sub {
-            margin: 4px 0 18px 0;
-            font-size: 13px;
-            line-height: 1.5;
+          p.sub {
+            margin: 0 0 20px 0;
+            font-size: 0.9rem;
             color: #6b7280;
           }
           label {
+            font-size: 0.82rem;
+            color: #374151;
             display: block;
-            font-size: 12px;
-            font-weight: 600;
-            color: #4b5563;
             margin-bottom: 4px;
-          }
-          .field {
-            margin-bottom: 14px;
           }
           input[type="password"] {
             width: 100%;
@@ -534,16 +501,14 @@ def create_app():
             border: 1px solid #d1d5db;
             font-size: 0.9rem;
             box-sizing: border-box;
-            background-color: #f9fafb;
-          }
-          input[type="password"]::placeholder {
-            color: #9ca3af;
           }
           input[type="password"]:focus {
             outline: none;
             border-color: #f97316;
             box-shadow: 0 0 0 1px rgba(249,115,22,0.2);
-            background-color: #ffffff;
+          }
+          .field {
+            margin-bottom: 14px;
           }
           button {
             margin-top: 6px;
@@ -555,7 +520,6 @@ def create_app():
             color: white;
             font-size: 0.95rem;
             font-weight: 500;
-            cursor: pointer;
           }
           button:hover {
             filter: brightness(0.95);
@@ -568,25 +532,22 @@ def create_app():
         </style>
       </head>
       <body>
-        <div class="safe-area">
-          <div class="card">
-            <div class="pill">FogonIMS</div>
-            <h1>Reset your password</h1>
-            <p class="sub">Choose a new password for your FogonIMS account.</p>
-            <form method="POST">
-              <input type="hidden" name="token" value="{{ token }}">
-              <div class="field">
-                <label>New password</label>
-                <input type="password" name="password" required>
-              </div>
-              <div class="field">
-                <label>Confirm password</label>
-                <input type="password" name="confirm" required>
-              </div>
-              <button type="submit">Update password</button>
-              <p class="hint">After resetting, return to the app and log in with your new password.</p>
-            </form>
-          </div>
+        <div class="card">
+          <h1>Reset your password</h1>
+          <p class="sub">Choose a new password for your FogonIMS account.</p>
+          <form method="POST">
+            <input type="hidden" name="token" value="{{ token }}">
+            <div class="field">
+              <label>New password</label>
+              <input type="password" name="password" required>
+            </div>
+            <div class="field">
+              <label>Confirm password</label>
+              <input type="password" name="confirm" required>
+            </div>
+            <button type="submit">Update password</button>
+            <p class="hint">After resetting, return to the app and log in with your new password.</p>
+          </form>
         </div>
       </body>
     </html>
@@ -900,6 +861,63 @@ def create_app():
     db.session.commit()
     return jsonify({"ok": True, "id": p.id, "image_url": p.image_url}), 200
 
+  # ---------- NEW: cook consume endpoint ----------
+  @app.post("/api/products/<int:pid>/consume")
+  @jwt_required()
+  def api_products_consume(pid: int):
+    """
+    Cook uses some quantity of a product.
+    Decreases product.quantity by the given amount.
+    """
+    claims = get_jwt()
+    role = (claims.get("role") or "").lower()
+
+    # If you want managers to also use this, remove this check.
+    if role == "manager":
+      return jsonify(
+        {"error": "Managers should edit quantity from the Edit Product screen."}
+      ), 403
+
+    p = Product.query.get(pid)
+    if not p:
+      return jsonify({"error": "Product not found"}), 404
+
+    data = request.get_json() or {}
+    try:
+      qty = int(data.get("quantity", 0))
+    except Exception:
+      return jsonify({"error": "quantity must be an integer"}), 400
+
+    if qty <= 0:
+      return jsonify({"error": "Quantity must be > 0"}), 400
+
+    current_qty = p.quantity or 0
+    if qty > current_qty:
+      return (
+        jsonify(
+          {
+            "error": f"Not enough stock. Current quantity is {current_qty}."
+          }
+        ),
+        400,
+      )
+
+    p.quantity = current_qty - qty
+    db.session.commit()
+
+    is_low = is_low_stock_product(p)
+
+    return (
+      jsonify(
+        {
+          "id": p.id,
+          "quantity": p.quantity,
+          "is_low_stock": is_low,
+        }
+      ),
+      200,
+    )
+
   @app.delete("/api/products/<int:pid>")
   @jwt_required()
   def api_products_delete(pid: int):
@@ -1036,10 +1054,7 @@ def create_app():
       return jsonify({"error": "Request not found"}), 404
 
     if r.requested_by != uid or role == "manager":
-      return (
-        jsonify({"error": "You can only edit your own pending requests"}),
-        403,
-      )
+      return jsonify({"error": "You can only edit your own pending requests"}), 403
     if r.status != "Pending":
       return jsonify({"error": "Only pending requests can be edited"}), 400
 
@@ -1089,10 +1104,7 @@ def create_app():
       return jsonify({"error": "Request not found"}), 404
 
     if r.requested_by != uid or role == "manager":
-      return (
-        jsonify({"error": "You can only delete your own pending requests"}),
-        403,
-      )
+      return jsonify({"error": "You can only delete your own pending requests"}), 403
     if r.status != "Pending":
       return jsonify({"error": "Only pending requests can be deleted"}), 400
 
@@ -1292,48 +1304,20 @@ def create_app():
     """
     Usage / top requested items based on approved stock requests.
 
-    Modes:
-      - Rolling:
-          ?range=weekly   -> last 7 days
-          ?range=monthly  -> last 30 days
-      - Calendar month:
-          ?month=YYYY-MM  -> exact month window (e.g. 2025-01)
+    Query param:
+      ?range=weekly  (last 7 days)
+      ?range=monthly (last 30 days)
     """
     claims = get_jwt()
     role = (claims.get("role") or "").lower()
     if role != "manager":
       return jsonify({"error": "Only manager can view reports"}), 403
 
-    month_param = (request.args.get("month") or "").strip()
+    range_param = (request.args.get("range") or "weekly").lower()
+    days = 7 if range_param == "weekly" else 30
+
     now_utc = datetime.now(timezone.utc)
-
-    if month_param:
-      # ----- Specific calendar month, e.g. 2025-01 -----
-      try:
-        year_str, month_str = month_param.split("-")
-        year = int(year_str)
-        month = int(month_str)
-        if not (1 <= month <= 12):
-          raise ValueError("month out of range")
-
-        start = datetime(year, month, 1, tzinfo=timezone.utc)
-        if month == 12:
-          end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-        else:
-          end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
-
-        range_label = "month"
-      except Exception:
-        return jsonify({"error": "month must be in YYYY-MM format"}), 400
-    else:
-      # ----- Rolling window: weekly/monthly (current behavior) -----
-      range_param = (request.args.get("range") or "weekly").lower()
-      days = 7 if range_param == "weekly" else 30
-
-      end = now_utc
-      start = now_utc - timedelta(days=days)
-      range_label = range_param
-      month_param = None   # no specific calendar month
+    cutoff = now_utc - timedelta(days=days)
 
     q = (
       db.session.query(
@@ -1346,8 +1330,7 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= start)
-      .filter(StockRequest.created_at < end)
+      .filter(StockRequest.created_at >= cutoff)
       .group_by(Product.id, Product.name)
       .order_by(db.func.sum(StockRequest.quantity).desc())
     )
@@ -1363,64 +1346,27 @@ def create_app():
       for r in rows
     ]
 
-    return jsonify({
-      "range": range_label,   # "weekly" | "monthly" | "month"
-      "month": month_param,   # e.g. "2025-01" or null
-      "items": data,
-    }), 200
+    return jsonify({"range": range_param, "items": data}), 200
 
   @app.get("/api/reports/cost-analysis")
   @jwt_required()
   def api_reports_cost_analysis():
     """
     Cost analysis for line chart + category breakdown.
-
-    Modes:
-      - Rolling:
-          ?range=weekly   -> last 7 days
-          ?range=monthly  -> last 30 days
-      - Calendar month:
-          ?month=YYYY-MM  -> exact month window (e.g. 2025-01)
     """
     claims = get_jwt()
     role = (claims.get("role") or "").lower()
     if role != "manager":
       return jsonify({"error": "Only manager can view reports"}), 403
 
-    month_param = (request.args.get("month") or "").strip()
+    range_param = (request.args.get("range") or "weekly").lower()
+    days = 7 if range_param == "weekly" else 30
+
     now_utc = datetime.now(timezone.utc)
-
-    if month_param:
-      # ----- Specific calendar month -----
-      try:
-        year_str, month_str = month_param.split("-")
-        year = int(year_str)
-        month = int(month_str)
-        if not (1 <= month <= 12):
-          raise ValueError("month out of range")
-
-        start = datetime(year, month, 1, tzinfo=timezone.utc)
-        if month == 12:
-          end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
-        else:
-          end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
-
-        range_label = "month"
-      except Exception:
-        return jsonify({"error": "month must be in YYYY-MM format"}), 400
-    else:
-      # ----- Rolling window (current behavior) -----
-      range_param = (request.args.get("range") or "weekly").lower()
-      days = 7 if range_param == "weekly" else 30
-
-      end = now_utc
-      start = now_utc - timedelta(days=days)
-      range_label = range_param
-      month_param = None
+    cutoff = now_utc - timedelta(days=days)
 
     day_expr = db.func.date(StockRequest.created_at)
 
-    # ---- Line chart: cost per day ----
     q_line = (
       db.session.query(
         day_expr.label("day"),
@@ -1430,8 +1376,7 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= start)
-      .filter(StockRequest.created_at < end)
+      .filter(StockRequest.created_at >= cutoff)
       .group_by(day_expr)
       .order_by(day_expr)
     )
@@ -1451,7 +1396,6 @@ def create_app():
         }
       )
 
-    # ---- Category breakdown: cost by product.category ----
     q_breakdown = (
       db.session.query(
         Product.category.label("category"),
@@ -1461,8 +1405,7 @@ def create_app():
       )
       .join(Product, StockRequest.product_id == Product.id)
       .filter(StockRequest.status == "Approved")
-      .filter(StockRequest.created_at >= start)
-      .filter(StockRequest.created_at < end)
+      .filter(StockRequest.created_at >= cutoff)
       .group_by(Product.category)
       .order_by(db.func.sum(StockRequest.quantity * Product.price).desc())
     )
@@ -1476,12 +1419,16 @@ def create_app():
       for r in breakdown_rows
     ]
 
-    return jsonify({
-      "range": range_label,   # "weekly" | "monthly" | "month"
-      "month": month_param,
-      "points": points,
-      "breakdown": breakdown,
-    }), 200
+    return (
+      jsonify(
+        {
+          "range": range_param,
+          "points": points,
+          "breakdown": breakdown,
+        }
+      ),
+      200,
+    )
 
   # ---------- Health ----------
   @app.get("/api/health")
