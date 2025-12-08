@@ -11,6 +11,8 @@ import {
   Alert,
   TouchableOpacity,
   Platform,
+  Modal,
+  TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect } from "@react-navigation/native";
@@ -84,10 +86,16 @@ export default function Inventory() {
   const [me, setMe] = useState<Me | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // modal state for cook consumption
+  const [consumeTarget, setConsumeTarget] = useState<Product | null>(null);
+  const [consumeQty, setConsumeQty] = useState<string>("1");
+  const [consumeLoading, setConsumeLoading] = useState(false);
+
   const params = useLocalSearchParams<{ filter?: string }>();
   const showLowOnly = (params.filter || "").toLowerCase() === "low";
 
   const isManager = (me?.role || "").toLowerCase() === "manager";
+  const isCook = !isManager;
 
   async function loadAll() {
     try {
@@ -161,6 +169,72 @@ export default function Inventory() {
     }
   };
 
+  // ⭐ open consume modal for a product
+  const openConsumeModal = (item: Product) => {
+    setConsumeTarget(item);
+    setConsumeQty("1");
+  };
+
+  const closeConsumeModal = () => {
+    setConsumeTarget(null);
+    setConsumeQty("1");
+    setConsumeLoading(false);
+  };
+
+  // ⭐ submit consumption
+  const submitConsume = async () => {
+    if (!consumeTarget) return;
+
+    const raw = consumeQty.trim();
+    if (!raw) {
+      Alert.alert("Missing quantity", "Enter how many you used.");
+      return;
+    }
+
+    const qty = parseInt(raw, 10);
+    if (Number.isNaN(qty) || qty <= 0) {
+      Alert.alert("Invalid quantity", "Enter a positive whole number.");
+      return;
+    }
+
+    if (qty > consumeTarget.quantity) {
+      Alert.alert(
+        "Not enough stock",
+        `You only have ${consumeTarget.quantity} in stock.`
+      );
+      return;
+    }
+
+    try {
+      setConsumeLoading(true);
+      const { data } = await api.post(`/products/${consumeTarget.id}/consume`, {
+        quantity: qty,
+      });
+
+      // Update local state
+      setItems((prev) =>
+        prev.map((p) =>
+          p.id === consumeTarget.id
+            ? {
+                ...p,
+                quantity: data.quantity,
+                is_low_stock: data.is_low_stock,
+              }
+            : p
+        )
+      );
+
+      closeConsumeModal();
+    } catch (e: any) {
+      console.log("consume error", e?.response?.data || e);
+      const msg =
+        e?.response?.data?.error ||
+        "Unable to update quantity. Please try again.";
+      Alert.alert("Error", msg);
+      setConsumeLoading(false);
+    }
+  };
+
   const renderItem = ({ item }: { item: Product }) => {
     const lowStock = isLowStockProduct(item);
 
@@ -211,6 +285,18 @@ export default function Inventory() {
                 resizeMode="contain"
               />
             )}
+
+            {/* ⭐ Cook-only "Use" button */}
+            {isCook && (
+              <TouchableOpacity
+                style={styles.consumeBtn}
+                onPress={() => openConsumeModal(item)}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="restaurant-outline" size={14} color="#fff" />
+                <Text style={styles.consumeText}>Use</Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {isManager && (
@@ -249,7 +335,7 @@ export default function Inventory() {
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerLeftRow}>
-          {/* 🔙 back to previous screen (Reports or HomeScreen) */}
+          {/* back to previous screen (Reports, Home, etc.) */}
           <TouchableOpacity
             onPress={() => router.back()}
             style={styles.backBtn}
@@ -362,6 +448,60 @@ export default function Inventory() {
           }
         />
       )}
+
+      {/* 🔢 Consume Quantity Modal (Cook only) */}
+      <Modal
+        visible={!!consumeTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={closeConsumeModal}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Use Product</Text>
+            {consumeTarget && (
+              <Text style={styles.modalSubtitle}>
+                {consumeTarget.name} • In stock: {consumeTarget.quantity}
+              </Text>
+            )}
+
+            <Text style={styles.modalLabel}>Quantity used</Text>
+            <View style={styles.modalInputRow}>
+              <Ionicons name="remove-circle-outline" size={18} color="#9CA3AF" />
+              <TextInput
+                style={styles.modalInput}
+                value={consumeQty}
+                onChangeText={setConsumeQty}
+                keyboardType="numeric"
+                placeholder="e.g. 3"
+                placeholderTextColor="#9CA3AF"
+              />
+            </View>
+
+            <View style={styles.modalButtonsRow}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalCancelBtn]}
+                onPress={closeConsumeModal}
+                disabled={consumeLoading}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.modalConfirmBtn]}
+                onPress={submitConsume}
+                disabled={consumeLoading}
+              >
+                {consumeLoading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalConfirmText}>Confirm</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -564,5 +704,97 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#eee",
     backgroundColor: "#F3F4F6",
+  },
+
+  /* Cook "Use" button */
+  consumeBtn: {
+    marginTop: 8,
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#111827",
+  },
+  consumeText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+
+  /* Modal styles */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCard: {
+    width: "82%",
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    padding: 18,
+    ...(Platform.OS === "ios" ? iosShadow : { elevation: 4 }),
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+  modalSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    color: COLORS.muted,
+  },
+  modalLabel: {
+    marginTop: 14,
+    fontSize: 13,
+    color: COLORS.muted,
+  },
+  modalInputRow: {
+    marginTop: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: "#F9FAFB",
+  },
+  modalInput: {
+    flex: 1,
+    marginLeft: 6,
+    fontSize: 15,
+    color: COLORS.text,
+  },
+  modalButtonsRow: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 16,
+    gap: 10,
+  },
+  modalBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+  },
+  modalCancelBtn: {
+    backgroundColor: "#E5E7EB",
+  },
+  modalConfirmBtn: {
+    backgroundColor: COLORS.primary,
+  },
+  modalCancelText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: COLORS.text,
+  },
+  modalConfirmText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#ffffff",
   },
 });
