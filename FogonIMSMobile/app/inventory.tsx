@@ -97,7 +97,7 @@ export default function Inventory() {
       setUnreadCount(unread);
     } catch (err: any) {
       console.log("❌ load error", err?.response?.data || err);
-      Alert.alert("Error", "Failed to load inventory or user info.");
+      Alert.alert("Error", "Failed to load inventory.");
     } finally {
       setLoading(false);
     }
@@ -105,8 +105,7 @@ export default function Inventory() {
 
   useEffect(() => {
     (async () => {
-      const tk = await loadToken();
-      console.log("🔑 token:", tk ? tk.slice(0, 16) + "..." : "NONE");
+      await loadToken(); // ensures token exists (or logs you out elsewhere)
       await loadAll();
     })();
   }, []);
@@ -141,11 +140,8 @@ export default function Inventory() {
     try {
       setItems((prev) => prev.filter((p) => p.id !== id)); // optimistic
       await api.delete(`/products/${id}`);
-    } catch (e: any) {
-      Alert.alert(
-        "Delete failed",
-        e?.response?.data?.error || "Unable to delete product."
-      );
+    } catch (e) {
+      Alert.alert("Delete failed", "Unable to delete product.");
       await loadAll();
     }
   };
@@ -156,12 +152,6 @@ export default function Inventory() {
     const vendorName = item.vendor_name?.trim() || "";
     const vendorContact = item.vendor_contact?.trim() || "";
     const hasVendor = vendorName.length > 0 || vendorContact.length > 0;
-
-    const vendorLabel = hasVendor
-      ? vendorContact
-        ? `${vendorName || "Unspecified"} (${vendorContact})`
-        : vendorName
-      : "";
 
     return (
       <View style={styles.card}>
@@ -175,7 +165,7 @@ export default function Inventory() {
             </View>
 
             <Text style={[styles.meta, lowStock && styles.metaLow]}>
-              Qty: {item.quantity} · {formatCurrency(item.price)}
+              Qty: {item.quantity} · ${item.price.toFixed(2)}
             </Text>
 
             {item.description ? (
@@ -185,9 +175,18 @@ export default function Inventory() {
             ) : null}
 
             {hasVendor && (
-              <Text style={styles.vendor} numberOfLines={1}>
-                Vendor: {vendorLabel}
-              </Text>
+              <View style={{ marginTop: 3 }}>
+                {vendorName.length > 0 && (
+                  <Text style={styles.vendor} numberOfLines={1}>
+                    Vendor: {vendorName}
+                  </Text>
+                )}
+                {vendorContact.length > 0 && (
+                  <Text style={styles.vendorContact} numberOfLines={1}>
+                    Contact: {vendorContact}
+                  </Text>
+                )}
+              </View>
             )}
 
             {!!item.image_url && (
@@ -358,64 +357,58 @@ function absoluteUrl(path?: string | null) {
   return `${BASE}${path}`;
 }
 
-function formatCurrency(v?: number) {
-  const n = typeof v === "number" ? v : 0;
-  return `$${n.toFixed(2)}`;
-}
-
 const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: COLORS.bg },
+  /* ---------------------- ROOT + LAYOUT ---------------------- */
+  safe: {
+    flex: 1,
+    backgroundColor: COLORS.bg,
+  },
 
+  listContent: {
+    paddingHorizontal: 10,
+    paddingBottom: 100,
+  },
+
+  gridRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+
+  /* ---------------------- HEADER ---------------------- */
   header: {
     paddingHorizontal: 16,
+    paddingVertical: 10,
     paddingTop: 8,
-    paddingBottom: 10,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
+
   headerLeftRow: {
     flexDirection: "row",
     alignItems: "center",
   },
+
   backBtn: {
     paddingRight: 8,
     paddingVertical: 4,
   },
-  title: { fontSize: 24, fontWeight: "700", color: COLORS.text },
-  subtitle: { color: COLORS.muted, marginTop: 2 },
+
+  title: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: COLORS.text,
+  },
+
+  subtitle: {
+    marginTop: 2,
+    color: COLORS.muted,
+  },
 
   headerButtons: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-  },
-
-  secondaryBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    backgroundColor: "#FFEDD5",
-    gap: 4,
-  },
-  secondaryWideBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 999,
-    backgroundColor: "#FFEDD5",
-    gap: 4,
-    flex: 1,
-    marginLeft: 6,
-  },
-  secondaryText: {
-    color: "#EA580C",
-    fontWeight: "600",
-    fontSize: 13,
   },
 
   iconCircle: {
@@ -437,6 +430,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     paddingHorizontal: 2,
   },
+
   badgeText: {
     color: "#fff",
     fontSize: 10,
@@ -450,6 +444,7 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
 
+  /* ---------------------- BUTTONS ---------------------- */
   actionRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,
@@ -474,20 +469,36 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
 
-  loader: { flex: 1, alignItems: "center", justifyContent: "center" },
-  empty: { marginTop: 60, alignItems: "center" },
-  emptyText: { marginTop: 8, color: COLORS.muted },
-
-  listContent: {
-    paddingHorizontal: 10,
-    paddingBottom: 100,
-  },
-
-  gridRow: {
+  secondaryBtn: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "#FFEDD5",
+    gap: 4,
   },
 
+  secondaryWideBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#FFEDD5",
+    flex: 1,
+    marginLeft: 6,
+    gap: 4,
+  },
+
+  secondaryText: {
+    color: "#EA580C",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+
+  /* ---------------------- PRODUCT CARD ---------------------- */
   card: {
     flex: 1,
     backgroundColor: COLORS.card,
@@ -499,27 +510,17 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
+
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
   },
-  cardActions: {
-    marginLeft: 6,
-    flexDirection: "column",
-    gap: 6,
-  },
-  name: { fontSize: 16, fontWeight: "600", color: COLORS.text },
 
-  meta: { marginTop: 3, color: "#4B5563", fontSize: 13 },
-  metaLow: { color: "#B91C1C", fontWeight: "700" },
-
-  desc: { marginTop: 3, color: COLORS.muted, fontSize: 12 },
-
-  vendor: {
-    marginTop: 2,
-    color: "#9CA3AF",
-    fontSize: 10,
+  name: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: COLORS.text,
   },
 
   lowStockPill: {
@@ -533,6 +534,41 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 
+  meta: {
+    marginTop: 3,
+    fontSize: 13,
+    color: "#4B5563",
+  },
+
+  metaLow: {
+    color: "#B91C1C",
+    fontWeight: "700",
+  },
+
+  desc: {
+    marginTop: 3,
+    fontSize: 12,
+    color: COLORS.muted,
+  },
+
+  vendor: {
+    marginTop: 2,
+    fontSize: 10,
+    color: "#6B7280",
+  },
+
+  vendorContact: {
+    marginTop: 1,
+    fontSize: 10,
+    color: "#9CA3AF",
+  },
+
+  cardActions: {
+    marginLeft: 6,
+    flexDirection: "column",
+    gap: 6,
+  },
+
   iconBtn: {
     paddingHorizontal: 8,
     paddingVertical: 6,
@@ -540,15 +576,31 @@ const styles = StyleSheet.create({
     ...(Platform.OS === "ios" ? iosShadow : { elevation: 2 }),
   },
 
+  /* ---------------------- IMAGES ---------------------- */
   thumb: {
     width: "100%",
-    aspectRatio: 4 / 3,
+    aspectRatio: 3 / 4,
+    backgroundColor: "#F3F4F6",
     borderRadius: 10,
     marginTop: 8,
     borderWidth: 1,
     borderColor: "#E5E7EB",
-    backgroundColor: "#F3F4F6",
-    alignSelf: "center",
+  },
+
+  /* ---------------------- EMPTY / LOADING ---------------------- */
+  loader: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  empty: {
+    marginTop: 60,
+    alignItems: "center",
+  },
+
+  emptyText: {
+    marginTop: 8,
+    color: COLORS.muted,
   },
 });
-
