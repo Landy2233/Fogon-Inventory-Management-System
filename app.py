@@ -330,7 +330,7 @@ def create_app():
 
         return jsonify({"ok": True}), 200
 
-    # ----- reset password page (iPhone-friendly) -----
+    # ----- reset password page (iPhone-friendly screen) -----
     @app.route("/reset-password", methods=["GET", "POST"])
     def reset_password_page():
         token = request.args.get("token") or request.form.get("token")
@@ -367,7 +367,6 @@ def create_app():
             <head>
               <meta charset="utf-8">
               <title>Password Reset – FogonIMS</title>
-              <meta name="viewport" content="width=device-width, initial-scale=1">
               <style>
                 body {
                   margin: 0;
@@ -383,15 +382,14 @@ def create_app():
                 .card {
                   background: #ffffff;
                   padding: 28px 24px;
-                  border-radius: 24px;
+                  border-radius: 20px;
                   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
-                  max-width: 380px;
+                  max-width: 420px;
                   width: 100%;
-                  box-sizing: border-box;
                 }
                 h1 {
                   margin: 0 0 8px 0;
-                  font-size: 1.5rem;
+                  font-size: 1.6rem;
                   color: #111827;
                 }
                 .success {
@@ -401,7 +399,6 @@ def create_app():
                   color: #166534;
                   font-size: 0.9rem;
                   border: 1px solid #bbf7d0;
-                  margin-top: 10px;
                 }
                 a.btn {
                   display: inline-block;
@@ -413,7 +410,6 @@ def create_app():
                   text-decoration: none;
                   font-size: 0.9rem;
                   font-weight: 500;
-                  text-align: center;
                 }
               </style>
             </head>
@@ -429,7 +425,7 @@ def create_app():
             </html>
             """
 
-        # GET -> show iPhone-style reset form
+        # GET -> show form
         html = """
         <!doctype html>
         <html>
@@ -438,151 +434,93 @@ def create_app():
           <title>Reset Password – FogonIMS</title>
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
-            * {
-              box-sizing: border-box;
-            }
             body {
               margin: 0;
-              padding: 16px;
+              padding: 0;
               font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
                 system-ui, sans-serif;
               background: linear-gradient(135deg, #f97316, #facc15);
-              min-height: 100vh;
               display: flex;
               align-items: center;
               justify-content: center;
-            }
-            .shell {
-              width: 100%;
-              max-width: 420px;
+              min-height: 100vh;
             }
             .card {
               background: #ffffff;
-              padding: 24px 20px 22px;
-              border-radius: 24px;
-              box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
-            }
-            .logo-badge {
-              width: 42px;
-              height: 42px;
+              padding: 28px 24px;
               border-radius: 20px;
-              background: radial-gradient(circle at 30% 20%, #fed7aa, #f97316);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              color: #ffffff;
-              font-weight: 700;
-              font-size: 1.2rem;
-              margin-bottom: 12px;
+              box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+              max-width: 420px;
+              width: 100%;
+              box-sizing: border-box;
             }
             h1 {
-              margin: 0 0 4px 0;
-              font-size: 1.4rem;
+              margin: 0 0 6px 0;
+              font-size: 1.6rem;
               color: #111827;
-              letter-spacing: -0.01em;
             }
             p.sub {
-              margin: 0 0 18px 0;
+              margin: 0 0 20px 0;
               font-size: 0.9rem;
               color: #6b7280;
-              line-height: 1.4;
-            }
-            .field {
-              margin-bottom: 14px;
             }
             label {
-              font-size: 0.8rem;
+              font-size: 0.82rem;
               color: #374151;
               display: block;
               margin-bottom: 4px;
-              font-weight: 500;
             }
             input[type="password"] {
               width: 100%;
-              padding: 10px 11px;
-              border-radius: 12px;
-              border: 1px solid #e5e7eb;
+              padding: 9px 10px;
+              border-radius: 10px;
+              border: 1px solid #d1d5db;
               font-size: 0.9rem;
-              background-color: #f9fafb;
+              box-sizing: border-box;
             }
             input[type="password"]:focus {
               outline: none;
               border-color: #f97316;
-              box-shadow: 0 0 0 1px rgba(249,115,22,0.18);
-              background-color: #ffffff;
+              box-shadow: 0 0 0 1px rgba(249,115,22,0.2);
+            }
+            .field {
+              margin-bottom: 14px;
             }
             button {
-              margin-top: 8px;
+              margin-top: 6px;
               width: 100%;
-              padding: 11px 14px;
+              padding: 10px 14px;
               border-radius: 999px;
               border: none;
-              background: linear-gradient(135deg, #f97316, #ea580c);
+              background: #f97316;
               color: white;
               font-size: 0.95rem;
-              font-weight: 600;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              gap: 6px;
-            }
-            button span.icon {
-              font-size: 1.1rem;
-              line-height: 1;
+              font-weight: 500;
             }
             .hint {
               margin-top: 8px;
-              font-size: 0.78rem;
+              font-size: 0.8rem;
               color: #9ca3af;
-            }
-            .footer-note {
-              margin-top: 10px;
-              text-align: center;
-              font-size: 0.75rem;
-              color: #fef3c7;
-              text-shadow: 0 1px 2px rgba(0,0,0,0.22);
-            }
-
-            @media (max-width: 480px) {
-              body {
-                padding: 12px;
-              }
-              .card {
-                padding: 22px 18px 20px;
-              }
             }
           </style>
         </head>
         <body>
-          <div class="shell">
-            <div class="card">
-              <div class="logo-badge">F</div>
-              <h1>Reset your password</h1>
-              <p class="sub">
-                Choose a new password for your FogonIMS account.
-              </p>
-              <form method="POST">
-                <input type="hidden" name="token" value="{{ token }}">
-                <div class="field">
-                  <label>New password</label>
-                  <input type="password" name="password" autocomplete="new-password" required>
-                </div>
-                <div class="field">
-                  <label>Confirm password</label>
-                  <input type="password" name="confirm" autocomplete="new-password" required>
-                </div>
-                <button type="submit">
-                  <span>Update password</span>
-                  <span class="icon">➜</span>
-                </button>
-                <p class="hint">
-                  After resetting, open the FogonIMS app and log in with your new password.
-                </p>
-              </form>
-            </div>
-            <div class="footer-note">
-              FogonIMS • Secure password reset
-            </div>
+          <div class="card">
+            <h1>Reset your password</h1>
+            <p class="sub">Choose a new password for your FogonIMS account.</p>
+            <form method="POST">
+              <input type="hidden" name="token" value="{{ token }}">
+              <div class="field">
+                <label>New password</label>
+                <input type="password" name="password" required>
+              </div>
+              <div class="field">
+                <label>Confirm password</label>
+                <input type="password" name="confirm" required>
+              </div>
+              <button type="submit">Update password</button>
+              <p class="hint">After resetting, return to the app and log in with your new password.</p>
+            </form>
           </div>
         </body>
         </html>
@@ -1305,13 +1243,33 @@ def create_app():
         if role != "manager":
             return jsonify({"error": "Only manager can view reports"}), 403
 
+        # Existing "range" (weekly / monthly) + support for month=YYYY-MM
         range_param = (request.args.get("range") or "weekly").lower()
-        days = 7 if range_param == "weekly" else 30
+        month_param = request.args.get("month")  # e.g. "2025-11"
 
         now_utc = datetime.now(timezone.utc)
-        cutoff = now_utc - timedelta(days=days)
 
-        day_expr = StockRequest.created_at
+        # ---- Determine time window [start, end) ----
+        if month_param and "-" in month_param:
+            # Parse month=YYYY-MM from React
+            try:
+                year_str, mon_str = month_param.split("-", 1)
+                year_int = int(year_str)
+                mon_int = int(mon_str)
+                start = datetime(year_int, mon_int, 1, tzinfo=timezone.utc)
+                if mon_int == 12:
+                    end = datetime(year_int + 1, 1, 1, tzinfo=timezone.utc)
+                else:
+                    end = datetime(year_int, mon_int + 1, 1, tzinfo=timezone.utc)
+            except Exception:
+                # Fallback: last 30 days
+                end = now_utc
+                start = end - timedelta(days=30)
+        else:
+            # Old behavior: relative ranges
+            days = 7 if range_param == "weekly" else 30
+            end = now_utc
+            start = end - timedelta(days=days)
 
         q = (
             db.session.query(
@@ -1324,7 +1282,8 @@ def create_app():
             )
             .join(Product, StockRequest.product_id == Product.id)
             .filter(StockRequest.status == "Approved")
-            .filter(StockRequest.created_at >= cutoff)
+            .filter(StockRequest.created_at >= start)
+            .filter(StockRequest.created_at < end)
             .group_by(Product.id, Product.name)
             .order_by(db.func.sum(StockRequest.quantity).desc())
         )
@@ -1350,35 +1309,61 @@ def create_app():
         if role != "manager":
             return jsonify({"error": "Only manager can view reports"}), 403
 
-        # Existing range param (for weekly / last 30 days)
+        # Existing range param (weekly / monthly)
         range_param = (request.args.get("range") or "weekly").lower()
 
-        # New: optional month/year filters from query string, e.g. ?year=2025&month=11
-        year = request.args.get("year", type=int)
-        month = request.args.get("month", type=int)
+        # Support month=YYYY-MM or year/month ints
+        month_param_str = request.args.get("month")  # might be "2025-11"
+        year_int = request.args.get("year", type=int)
+        month_int = request.args.get("month", type=int)  # e.g. ?month=11
 
         now_utc = datetime.now(timezone.utc)
 
+        # Defaults for response
+        effective_range = range_param
+        month_for_response = None
+        year_for_response = None
+
         # ---- Determine time window [start, end) ----
-        if year and month:
-            # Specific month, e.g. November 2025
-            start = datetime(year, month, 1, tzinfo=timezone.utc)
-            if month == 12:
-                end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+        if month_param_str and "-" in month_param_str:
+            # Parse month=YYYY-MM from React
+            try:
+                y_str, m_str = month_param_str.split("-", 1)
+                y = int(y_str)
+                m = int(m_str)
+                start = datetime(y, m, 1, tzinfo=timezone.utc)
+                if m == 12:
+                    end = datetime(y + 1, 1, 1, tzinfo=timezone.utc)
+                else:
+                    end = datetime(y, m + 1, 1, tzinfo=timezone.utc)
+                effective_range = "month"
+                month_for_response = month_param_str
+                year_for_response = y
+            except Exception:
+                days = 7 if range_param == "weekly" else 30
+                end = now_utc
+                start = end - timedelta(days=days)
+        elif year_int and month_int:
+            # Support explicit ?year=2025&month=11
+            start = datetime(year_int, month_int, 1, tzinfo=timezone.utc)
+            if month_int == 12:
+                end = datetime(year_int + 1, 1, 1, tzinfo=timezone.utc)
             else:
-                end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+                end = datetime(year_int, month_int + 1, 1, tzinfo=timezone.utc)
             effective_range = "month"
-        elif year and not month:
-            # Whole year, e.g. 2025
-            start = datetime(year, 1, 1, tzinfo=timezone.utc)
-            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+            month_for_response = f"{year_int:04d}-{month_int:02d}"
+            year_for_response = year_int
+        elif year_int and not month_int:
+            # Whole year, e.g. ?year=2025
+            start = datetime(year_int, 1, 1, tzinfo=timezone.utc)
+            end = datetime(year_int + 1, 1, 1, tzinfo=timezone.utc)
             effective_range = "year"
+            year_for_response = year_int
         else:
-            # Fallback: relative ranges (existing behavior)
+            # Fallback: relative ranges
             days = 7 if range_param == "weekly" else 30
             end = now_utc
             start = end - timedelta(days=days)
-            effective_range = range_param  # "weekly" or "monthly"/"30days"
 
         # Use DATE(created_at) for x-axis labels
         day_expr = db.func.date(StockRequest.created_at)
@@ -1442,9 +1427,9 @@ def create_app():
         return (
             jsonify(
                 {
-                    "range": effective_range,   # "weekly", "month", "year", etc.
-                    "year": year,
-                    "month": month,
+                    "range": effective_range,
+                    "year": year_for_response,
+                    "month": month_for_response,
                     "points": points,
                     "breakdown": breakdown,
                 }
