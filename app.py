@@ -1350,14 +1350,40 @@ def create_app():
         if role != "manager":
             return jsonify({"error": "Only manager can view reports"}), 403
 
+        # Existing range param (for weekly / last 30 days)
         range_param = (request.args.get("range") or "weekly").lower()
-        days = 7 if range_param == "weekly" else 30
+
+        # New: optional month/year filters from query string, e.g. ?year=2025&month=11
+        year = request.args.get("year", type=int)
+        month = request.args.get("month", type=int)
 
         now_utc = datetime.now(timezone.utc)
-        cutoff = now_utc - timedelta(days=days)
 
+        # ---- Determine time window [start, end) ----
+        if year and month:
+            # Specific month, e.g. November 2025
+            start = datetime(year, month, 1, tzinfo=timezone.utc)
+            if month == 12:
+                end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+            else:
+                end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+            effective_range = "month"
+        elif year and not month:
+            # Whole year, e.g. 2025
+            start = datetime(year, 1, 1, tzinfo=timezone.utc)
+            end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+            effective_range = "year"
+        else:
+            # Fallback: relative ranges (existing behavior)
+            days = 7 if range_param == "weekly" else 30
+            end = now_utc
+            start = end - timedelta(days=days)
+            effective_range = range_param  # "weekly" or "monthly"/"30days"
+
+        # Use DATE(created_at) for x-axis labels
         day_expr = db.func.date(StockRequest.created_at)
 
+        # ---------- Line chart: cost over time ----------
         q_line = (
             db.session.query(
                 day_expr.label("day"),
@@ -1367,7 +1393,8 @@ def create_app():
             )
             .join(Product, StockRequest.product_id == Product.id)
             .filter(StockRequest.status == "Approved")
-            .filter(StockRequest.created_at >= cutoff)
+            .filter(StockRequest.created_at >= start)
+            .filter(StockRequest.created_at < end)
             .group_by(day_expr)
             .order_by(day_expr)
         )
@@ -1387,6 +1414,7 @@ def create_app():
                 }
             )
 
+        # ---------- Breakdown: cost by category ----------
         q_breakdown = (
             db.session.query(
                 Product.category.label("category"),
@@ -1396,7 +1424,8 @@ def create_app():
             )
             .join(Product, StockRequest.product_id == Product.id)
             .filter(StockRequest.status == "Approved")
-            .filter(StockRequest.created_at >= cutoff)
+            .filter(StockRequest.created_at >= start)
+            .filter(StockRequest.created_at < end)
             .group_by(Product.category)
             .order_by(db.func.sum(StockRequest.quantity * Product.price).desc())
         )
@@ -1413,7 +1442,9 @@ def create_app():
         return (
             jsonify(
                 {
-                    "range": range_param,
+                    "range": effective_range,   # "weekly", "month", "year", etc.
+                    "year": year,
+                    "month": month,
                     "points": points,
                     "breakdown": breakdown,
                 }
