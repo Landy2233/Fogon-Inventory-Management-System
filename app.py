@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
 
 import requests as http_requests  # Brevo HTTP client
-from email.message import EmailMessage   # still imported but not used; OK
+from email.message import EmailMessage  # imported but not used; fine
 
 from flask import (
     Flask,
@@ -70,7 +70,7 @@ def unique_filename(filename: str) -> str:
 def is_low_stock_product(p: Product) -> bool:
     """
     - If reorder_threshold > 0 and quantity <= threshold -> low
-    - OR quantity < 2 as a fallback
+    - OR quantity < 2 as fallback
     """
     threshold = getattr(p, "reorder_threshold", 0) or 0
     qty = p.quantity or 0
@@ -81,9 +81,6 @@ def is_low_stock_product(p: Product) -> bool:
 
 # ---------- Low-stock scan ----------
 def run_low_stock_scan():
-    """
-    Scan for low-stock products and manage LOW_STOCK notifications.
-    """
     managers = User.query.filter_by(role="manager").all()
     if not managers:
         return
@@ -108,7 +105,7 @@ def run_low_stock_scan():
 
     existing_map: dict[int, set[int]] = {}
 
-    # Clean up notifications for products that are no longer low
+    # remove LOW_STOCK for products no longer low
     for n in existing:
         pid = None
         if isinstance(n.payload, dict):
@@ -123,16 +120,14 @@ def run_low_stock_scan():
 
         existing_map.setdefault(n.user_id, set()).add(pid)
 
-    # Create missing notifications
+    # create missing LOW_STOCK
     for p in all_products:
         if p.id not in low_product_ids:
             continue
 
         for m in managers:
-            already_has = p.id in existing_map.get(m.id, set())
-            if already_has:
+            if p.id in existing_map.get(m.id, set()):
                 continue
-
             msg = f"Low stock: {p.name} has only {p.quantity} left in inventory."
             n = Notification(
                 user_id=m.id,
@@ -152,18 +147,18 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
-    # ----- password-reset token serializer -----
+    # token serializer for password reset
     serializer = URLSafeTimedSerializer(app.config["SECRET_KEY"])
 
-    # ----- password-reset email sender (Brevo) -----
+    # ----- password-reset email with Brevo -----
     def send_password_reset_email(email: str, token: str):
         reset_link = f"{BASE_URL}/reset-password?token={token}"
 
-        # Always log link for debugging
+        # log link for debugging
         print("Password reset link for debugging:", reset_link)
 
         if not BREVO_API_KEY:
-            print("BREVO_API_KEY is not set – skipping actual email send.")
+            print("BREVO_API_KEY is not set – skipping Brevo send.")
             return
 
         try:
@@ -195,6 +190,7 @@ def create_app():
         except Exception as e:
             print("Error calling Brevo API:", e)
 
+    # uploads
     upload_folder = os.path.join(app.root_path, "static", "uploads")
     ensure_dir(upload_folder)
     app.config["UPLOAD_FOLDER"] = upload_folder
@@ -210,7 +206,7 @@ def create_app():
     def load_user(uid):
         return User.query.get(int(uid))
 
-    # ---------- Root / static ----------
+    # ---------- Root & static ----------
     @app.route("/")
     def index():
         return jsonify({"msg": "FogonIMS API"}), 200
@@ -251,9 +247,6 @@ def create_app():
 
     @app.post("/api/register")
     def api_register():
-        """
-        Create a new user (cook or manager) and return a JWT.
-        """
         data = request.get_json() or {}
 
         username = (data.get("username") or "").strip()
@@ -310,13 +303,9 @@ def create_app():
             201,
         )
 
-    # ----- start password reset by email -----
+    # ----- start password reset -----
     @app.post("/api/password/forgot")
     def api_password_forgot():
-        """
-        Start password reset by email.
-        Always returns 200 (if email provided).
-        """
         data = request.get_json() or {}
         email = (data.get("email") or "").strip().lower()
 
@@ -329,6 +318,7 @@ def create_app():
         )
 
         if not user:
+            # don't leak whether email exists
             return jsonify({"ok": True}), 200
 
         token = serializer.dumps({"uid": user.id})
@@ -340,7 +330,7 @@ def create_app():
 
         return jsonify({"ok": True}), 200
 
-    # ----- reset password page (unchanged) -----
+    # ----- reset password page (iPhone-friendly) -----
     @app.route("/reset-password", methods=["GET", "POST"])
     def reset_password_page():
         token = request.args.get("token") or request.form.get("token")
@@ -349,7 +339,7 @@ def create_app():
             return "Missing token.", 400
 
         try:
-            data = serializer.loads(token, max_age=3600)  # 1 hour expiry
+            data = serializer.loads(token, max_age=3600)
             uid = data.get("uid")
         except SignatureExpired:
             return "This password reset link has expired.", 400
@@ -374,167 +364,227 @@ def create_app():
             return """
             <!doctype html>
             <html>
-              <head>
-                <meta charset="utf-8">
-                <title>Password Reset – FogonIMS</title>
-                <style>
-                  body {
-                    margin: 0;
-                    padding: 0;
-                    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                    background: linear-gradient(135deg, #f97316, #facc15);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    min-height: 100vh;
-                  }
-                  .card {
-                    background: #ffffff;
-                    padding: 32px 28px;
-                    border-radius: 16px;
-                    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
-                    max-width: 420px;
-                    width: 100%;
-                  }
-                  h1 {
-                    margin: 0 0 8px 0;
-                    font-size: 1.6rem;
-                    color: #111827;
-                  }
-                  .success {
-                    padding: 10px 12px;
-                    border-radius: 10px;
-                    background: #ecfdf5;
-                    color: #166534;
-                    font-size: 0.9rem;
-                    border: 1px solid #bbf7d0;
-                  }
-                  a.btn {
-                    display: inline-block;
-                    margin-top: 18px;
-                    padding: 10px 16px;
-                    border-radius: 999px;
-                    background: #f97316;
-                    color: #ffffff;
-                    text-decoration: none;
-                    font-size: 0.9rem;
-                    font-weight: 500;
-                  }
-                  a.btn:hover {
-                    filter: brightness(0.95);
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="card">
-                  <h1>Password reset successful</h1>
-                  <div class="success">
-                    Your password has been updated. You can now log in with your new credentials in the FogonIMS app.
-                  </div>
-                  <a href="/" class="btn">Back to FogonIMS API</a>
+            <head>
+              <meta charset="utf-8">
+              <title>Password Reset – FogonIMS</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <style>
+                body {
+                  margin: 0;
+                  padding: 0;
+                  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                    system-ui, sans-serif;
+                  background: linear-gradient(135deg, #f97316, #facc15);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  min-height: 100vh;
+                }
+                .card {
+                  background: #ffffff;
+                  padding: 28px 24px;
+                  border-radius: 24px;
+                  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+                  max-width: 380px;
+                  width: 100%;
+                  box-sizing: border-box;
+                }
+                h1 {
+                  margin: 0 0 8px 0;
+                  font-size: 1.5rem;
+                  color: #111827;
+                }
+                .success {
+                  padding: 10px 12px;
+                  border-radius: 12px;
+                  background: #ecfdf5;
+                  color: #166534;
+                  font-size: 0.9rem;
+                  border: 1px solid #bbf7d0;
+                  margin-top: 10px;
+                }
+                a.btn {
+                  display: inline-block;
+                  margin-top: 18px;
+                  padding: 10px 16px;
+                  border-radius: 999px;
+                  background: #f97316;
+                  color: #ffffff;
+                  text-decoration: none;
+                  font-size: 0.9rem;
+                  font-weight: 500;
+                  text-align: center;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="card">
+                <h1>Password reset successful</h1>
+                <div class="success">
+                  Your password has been updated. You can now log in with your new credentials in the FogonIMS app.
                 </div>
-              </body>
+                <a href="/" class="btn">Back to FogonIMS API</a>
+              </div>
+            </body>
             </html>
             """
 
-        # GET: show reset form
+        # GET -> show iPhone-style reset form
         html = """
         <!doctype html>
         <html>
-          <head>
-            <meta charset="utf-8">
-            <title>Reset Password – FogonIMS</title>
-            <style>
+        <head>
+          <meta charset="utf-8">
+          <title>Reset Password – FogonIMS</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            * {
+              box-sizing: border-box;
+            }
+            body {
+              margin: 0;
+              padding: 16px;
+              font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                system-ui, sans-serif;
+              background: linear-gradient(135deg, #f97316, #facc15);
+              min-height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .shell {
+              width: 100%;
+              max-width: 420px;
+            }
+            .card {
+              background: #ffffff;
+              padding: 24px 20px 22px;
+              border-radius: 24px;
+              box-shadow: 0 18px 40px rgba(0, 0, 0, 0.18);
+            }
+            .logo-badge {
+              width: 42px;
+              height: 42px;
+              border-radius: 20px;
+              background: radial-gradient(circle at 30% 20%, #fed7aa, #f97316);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-weight: 700;
+              font-size: 1.2rem;
+              margin-bottom: 12px;
+            }
+            h1 {
+              margin: 0 0 4px 0;
+              font-size: 1.4rem;
+              color: #111827;
+              letter-spacing: -0.01em;
+            }
+            p.sub {
+              margin: 0 0 18px 0;
+              font-size: 0.9rem;
+              color: #6b7280;
+              line-height: 1.4;
+            }
+            .field {
+              margin-bottom: 14px;
+            }
+            label {
+              font-size: 0.8rem;
+              color: #374151;
+              display: block;
+              margin-bottom: 4px;
+              font-weight: 500;
+            }
+            input[type="password"] {
+              width: 100%;
+              padding: 10px 11px;
+              border-radius: 12px;
+              border: 1px solid #e5e7eb;
+              font-size: 0.9rem;
+              background-color: #f9fafb;
+            }
+            input[type="password"]:focus {
+              outline: none;
+              border-color: #f97316;
+              box-shadow: 0 0 0 1px rgba(249,115,22,0.18);
+              background-color: #ffffff;
+            }
+            button {
+              margin-top: 8px;
+              width: 100%;
+              padding: 11px 14px;
+              border-radius: 999px;
+              border: none;
+              background: linear-gradient(135deg, #f97316, #ea580c);
+              color: white;
+              font-size: 0.95rem;
+              font-weight: 600;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+            }
+            button span.icon {
+              font-size: 1.1rem;
+              line-height: 1;
+            }
+            .hint {
+              margin-top: 8px;
+              font-size: 0.78rem;
+              color: #9ca3af;
+            }
+            .footer-note {
+              margin-top: 10px;
+              text-align: center;
+              font-size: 0.75rem;
+              color: #fef3c7;
+              text-shadow: 0 1px 2px rgba(0,0,0,0.22);
+            }
+
+            @media (max-width: 480px) {
               body {
-                margin: 0;
-                padding: 0;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                background: linear-gradient(135deg, #f97316, #facc15);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                min-height: 100vh;
+                padding: 12px;
               }
               .card {
-                background: #ffffff;
-                padding: 32px 28px;
-                border-radius: 16px;
-                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
-                max-width: 420px;
-                width: 100%;
+                padding: 22px 18px 20px;
               }
-              h1 {
-                margin: 0 0 6px 0;
-                font-size: 1.6rem;
-                color: #111827;
-              }
-              p.sub {
-                margin: 0 0 20px 0;
-                font-size: 0.9rem;
-                color: #6b7280;
-              }
-              label {
-                font-size: 0.82rem;
-                color: #374151;
-                display: block;
-                margin-bottom: 4px;
-              }
-              input[type="password"] {
-                width: 100%;
-                padding: 9px 10px;
-                border-radius: 10px;
-                border: 1px solid #d1d5db;
-                font-size: 0.9rem;
-                box-sizing: border-box;
-              }
-              input[type="password"]:focus {
-                outline: none;
-                border-color: #f97316;
-                box-shadow: 0 0 0 1px rgba(249,115,22,0.2);
-              }
-              .field {
-                margin-bottom: 14px;
-              }
-              button {
-                margin-top: 6px;
-                width: 100%;
-                padding: 10px 14px;
-                border-radius: 999px;
-                border: none;
-                background: #f97316;
-                color: white;
-                font-size: 0.95rem;
-                font-weight: 500;
-              }
-              button:hover {
-                filter: brightness(0.95);
-              }
-              .hint {
-                margin-top: 8px;
-                font-size: 0.8rem;
-                color: #9ca3af;
-              }
-            </style>
-          </head>
-          <body>
+            }
+          </style>
+        </head>
+        <body>
+          <div class="shell">
             <div class="card">
+              <div class="logo-badge">F</div>
               <h1>Reset your password</h1>
-              <p class="sub">Choose a new password for your FogonIMS account.</p>
+              <p class="sub">
+                Choose a new password for your FogonIMS account.
+              </p>
               <form method="POST">
                 <input type="hidden" name="token" value="{{ token }}">
                 <div class="field">
                   <label>New password</label>
-                  <input type="password" name="password" required>
+                  <input type="password" name="password" autocomplete="new-password" required>
                 </div>
                 <div class="field">
                   <label>Confirm password</label>
-                  <input type="password" name="confirm" required>
+                  <input type="password" name="confirm" autocomplete="new-password" required>
                 </div>
-                <button type="submit">Update password</button>
-                <p class="hint">After resetting, return to the app and log in with your new password.</p>
+                <button type="submit">
+                  <span>Update password</span>
+                  <span class="icon">➜</span>
+                </button>
+                <p class="hint">
+                  After resetting, open the FogonIMS app and log in with your new password.
+                </p>
               </form>
             </div>
-          </body>
+            <div class="footer-note">
+              FogonIMS • Secure password reset
+            </div>
+          </div>
+        </body>
         </html>
         """
         return render_template_string(html, token=token)
@@ -561,16 +611,15 @@ def create_app():
     @jwt_required()
     def api_products_list():
         """
-        Optional query param:
-          ?filter=low   -> only items considered low stock
+        Optional query:
+          ?filter=low  -> return only low-stock items
         """
         filter_param = (request.args.get("filter") or "").lower()
 
         q = Product.query
-
         if filter_param == "low":
-            items = q.all()
-            filtered = [p for p in items if is_low_stock_product(p)]
+            all_items = q.all()
+            filtered = [p for p in all_items if is_low_stock_product(p)]
         else:
             filtered = q.all()
 
@@ -686,9 +735,6 @@ def create_app():
     @app.post("/api/products/bulk")
     @jwt_required()
     def api_products_bulk_import():
-        """
-        Bulk import many products at once.
-        """
         username = (get_jwt_identity() or "").lower()
         role = (get_jwt().get("role") or "").lower()
         if not (username == "manager" or role == "manager"):
@@ -829,21 +875,21 @@ def create_app():
         db.session.commit()
         return jsonify({"ok": True, "id": p.id, "image_url": p.image_url}), 200
 
-    # ---------- NEW: cook consume endpoint ----------
+    # ---------- NEW cook consume endpoint ----------
     @app.post("/api/products/<int:pid>/consume")
     @jwt_required()
     def api_products_consume(pid: int):
         """
-        Cook uses some quantity of a product.
-        Decreases product.quantity by the given amount.
+        Cook uses some quantity of a product (decrease stock).
+        Body: { "quantity": 3 }
         """
         claims = get_jwt()
         role = (claims.get("role") or "").lower()
 
-        # If you want managers to also use this, remove this check.
+        # if you want managers to also use this, remove this check
         if role == "manager":
             return jsonify(
-                {"error": "Managers should edit quantity from the Edit Product screen."}
+                {"error": "Managers should edit quantity from Edit Product screen."}
             ), 403
 
         p = Product.query.get(pid)
@@ -914,9 +960,6 @@ def create_app():
     @app.post("/api/requests")
     @jwt_required()
     def api_stock_request():
-        """
-        Cook creates a stock request.
-        """
         claims = get_jwt()
         uid = claims.get("id")
         username = (get_jwt_identity() or "").lower()
@@ -977,7 +1020,6 @@ def create_app():
         role = (claims.get("role") or "").lower()
 
         q = StockRequest.query.join(Product, StockRequest.product_id == Product.id)
-
         if role != "manager":
             q = q.filter(StockRequest.requested_by == uid)
 
@@ -1008,9 +1050,6 @@ def create_app():
     @app.put("/api/requests/<int:rid>")
     @jwt_required()
     def api_request_update(rid: int):
-        """
-        Cook can edit their own PENDING request.
-        """
         claims = get_jwt()
         uid = claims.get("id")
         role = (claims.get("role") or "").lower()
@@ -1058,9 +1097,6 @@ def create_app():
     @app.delete("/api/requests/<int:rid>")
     @jwt_required()
     def api_request_delete(rid: int):
-        """
-        Cook can delete their own PENDING request.
-        """
         claims = get_jwt()
         uid = claims.get("id")
         role = (claims.get("role") or "").lower()
@@ -1183,7 +1219,6 @@ def create_app():
 
                 if key in seen_low_stock:
                     continue
-
                 seen_low_stock.add(key)
 
             filtered_items.append(n)
@@ -1265,9 +1300,6 @@ def create_app():
     @app.get("/api/reports/usage")
     @jwt_required()
     def api_reports_usage():
-        """
-        Usage / top requested items based on approved stock requests.
-        """
         claims = get_jwt()
         role = (claims.get("role") or "").lower()
         if role != "manager":
@@ -1278,6 +1310,8 @@ def create_app():
 
         now_utc = datetime.now(timezone.utc)
         cutoff = now_utc - timedelta(days=days)
+
+        day_expr = StockRequest.created_at
 
         q = (
             db.session.query(
@@ -1311,9 +1345,6 @@ def create_app():
     @app.get("/api/reports/cost-analysis")
     @jwt_required()
     def api_reports_cost_analysis():
-        """
-        Cost analysis for line chart + category breakdown.
-        """
         claims = get_jwt()
         role = (claims.get("role") or "").lower()
         if role != "manager":
@@ -1367,9 +1398,7 @@ def create_app():
             .filter(StockRequest.status == "Approved")
             .filter(StockRequest.created_at >= cutoff)
             .group_by(Product.category)
-            .order_by(
-                db.func.sum(StockRequest.quantity * Product.price).desc()
-            )
+            .order_by(db.func.sum(StockRequest.quantity * Product.price).desc())
         )
 
         breakdown_rows = q_breakdown.all()
