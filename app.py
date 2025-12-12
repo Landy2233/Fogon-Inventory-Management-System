@@ -31,7 +31,13 @@ from models import db, User, Product, StockRequest, Notification
 from config import Config
 
 EASTERN = ZoneInfo("America/New_York")
+
+# Base URL used in the reset link inside the email
 BASE_URL = os.getenv("FOGON_BASE_URL", "http://localhost:5001")
+
+# Where the browser "Back to Login" button should send the user after resetting.
+# Default is our new HTML login page /login-page
+LOGIN_PAGE_URL = os.getenv("FOGON_LOGIN_URL", "/login-page")
 
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_SENDER_EMAIL = os.getenv("MAIL_FROM", "no-reply@fogonims.com")
@@ -215,7 +221,7 @@ def create_app():
     def uploaded_file(filename):
         return send_from_directory(app.config["UPLOAD_FOLDER"], filename)
 
-    # ---------- Auth ----------
+    # ---------- Auth API (used by mobile app) ----------
     @app.post("/api/login")
     def api_login():
         data = request.get_json() or {}
@@ -303,6 +309,191 @@ def create_app():
             201,
         )
 
+    # ---------- HTML login page (for after reset) ----------
+    @app.route("/login-page", methods=["GET", "POST"])
+    def web_login_page():
+        error = None
+
+        if request.method == "POST":
+            username = (request.form.get("username") or "").strip()
+            password = request.form.get("password") or ""
+
+            user = User.query.filter_by(username=username).first()
+            if user and user.check_password(password):
+                # Just show a success message – this login is for confirming
+                # the new password, not for the mobile app.
+                success_html = """
+                <!doctype html>
+                <html>
+                <head>
+                  <meta charset="utf-8">
+                  <title>Login successful – FogonIMS</title>
+                  <meta name="viewport" content="width=device-width, initial-scale=1">
+                  <style>
+                    body {
+                      margin: 0;
+                      padding: 0;
+                      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                        system-ui, sans-serif;
+                      background: linear-gradient(135deg, #f97316, #facc15);
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      min-height: 100vh;
+                    }
+                    .card {
+                      background: #ffffff;
+                      padding: 28px 24px;
+                      border-radius: 20px;
+                      box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+                      max-width: 420px;
+                      width: 100%;
+                      box-sizing: border-box;
+                    }
+                    h1 {
+                      margin: 0 0 8px 0;
+                      font-size: 1.6rem;
+                      color: #111827;
+                    }
+                    .success {
+                      padding: 10px 12px;
+                      border-radius: 12px;
+                      background: #ecfdf5;
+                      color: #166534;
+                      font-size: 0.9rem;
+                      border: 1px solid #bbf7d0;
+                    }
+                    p {
+                      margin-top: 10px;
+                      font-size: 0.9rem;
+                      color: #4b5563;
+                    }
+                  </style>
+                </head>
+                <body>
+                  <div class="card">
+                    <h1>Login successful</h1>
+                    <div class="success">
+                      You are logged in with your new password. You can now return to the FogonIMS mobile app and use these credentials.
+                    </div>
+                    <p>You may close this tab or window.</p>
+                  </div>
+                </body>
+                </html>
+                """
+                return render_template_string(success_html)
+
+            else:
+                error = "Invalid username or password."
+
+        login_html = """
+        <!doctype html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <title>Login – FogonIMS</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body {
+              margin: 0;
+              padding: 0;
+              font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                system-ui, sans-serif;
+              background: linear-gradient(135deg, #f97316, #facc15);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              min-height: 100vh;
+            }
+            .card {
+              background: #ffffff;
+              padding: 28px 24px;
+              border-radius: 20px;
+              box-shadow: 0 18px 40px rgba(0, 0, 0, 0.16);
+              max-width: 420px;
+              width: 100%;
+              box-sizing: border-box;
+            }
+            h1 {
+              margin: 0 0 6px 0;
+              font-size: 1.6rem;
+              color: #111827;
+            }
+            p.sub {
+              margin: 0 0 20px 0;
+              font-size: 0.9rem;
+              color: #6b7280;
+            }
+            label {
+              font-size: 0.82rem;
+              color: #374151;
+              display: block;
+              margin-bottom: 4px;
+            }
+            input[type="text"],
+            input[type="password"] {
+              width: 100%;
+              padding: 9px 10px;
+              border-radius: 10px;
+              border: 1px solid #d1d5db;
+              font-size: 0.9rem;
+              box-sizing: border-box;
+            }
+            input[type="text"]:focus,
+            input[type="password"]:focus {
+              outline: none;
+              border-color: #f97316;
+              box-shadow: 0 0 0 1px rgba(249,115,22,0.2);
+            }
+            .field {
+              margin-bottom: 14px;
+            }
+            button {
+              margin-top: 6px;
+              width: 100%;
+              padding: 10px 14px;
+              border-radius: 999px;
+              border: none;
+              background: #f97316;
+              color: white;
+              font-size: 0.95rem;
+              font-weight: 500;
+            }
+            .error {
+              margin-bottom: 10px;
+              padding: 8px 10px;
+              border-radius: 10px;
+              background: #fef2f2;
+              color: #b91c1c;
+              border: 1px solid #fecaca;
+              font-size: 0.85rem;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Log in to FogonIMS</h1>
+            <p class="sub">Use the same username and password as in the FogonIMS mobile app.</p>
+            {% if error %}
+              <div class="error">{{ error }}</div>
+            {% endif %}
+            <form method="POST">
+              <div class="field">
+                <label>Username</label>
+                <input type="text" name="username" required>
+              </div>
+              <div class="field">
+                <label>Password</label>
+                <input type="password" name="password" required>
+              </div>
+              <button type="submit">Login</button>
+            </form>
+          </div>
+        </body>
+        </html>
+        """
+        return render_template_string(login_html, error=error)
+
     # ----- start password reset -----
     @app.post("/api/password/forgot")
     def api_password_forgot():
@@ -361,12 +552,15 @@ def create_app():
 
             user.set_password(new_password)
             db.session.commit()
-            return """
+
+            # ✅ SUCCESS PAGE POINTS TO LOGIN_PAGE_URL NOW
+            success_html = """
             <!doctype html>
             <html>
             <head>
               <meta charset="utf-8">
               <title>Password Reset – FogonIMS</title>
+              <meta name="viewport" content="width=device-width, initial-scale=1">
               <style>
                 body {
                   margin: 0;
@@ -419,11 +613,12 @@ def create_app():
                 <div class="success">
                   Your password has been updated. You can now log in with your new credentials in the FogonIMS app.
                 </div>
-                <a href="/" class="btn">Back to FogonIMS API</a>
+                <a href="{{ login_url }}" class="btn">Back to Login page</a>
               </div>
             </body>
             </html>
             """
+            return render_template_string(success_html, login_url=LOGIN_PAGE_URL)
 
         # GET -> show form
         html = """
@@ -519,7 +714,7 @@ def create_app():
                 <input type="password" name="confirm" required>
               </div>
               <button type="submit">Update password</button>
-              <p class="hint">After resetting, return to the app and log in with your new password.</p>
+              <p class="hint">After resetting, you can go to the login page and sign in with your new password.</p>
             </form>
           </div>
         </body>
@@ -1474,6 +1669,12 @@ def create_app():
                 db.session.commit()
                 print("Seeded users.")
             print("DB ready.")
+            
+            
+    @app.route("/debug-login-url")
+    def debug_login_url():
+        return f"DEBUG: LOGIN_PAGE_URL = {LOGIN_PAGE_URL}"
+       
 
     return app
 
